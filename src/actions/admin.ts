@@ -106,31 +106,21 @@ export async function addCards(formData: FormData) {
         .split(/[\n,]+/)
         .map(c => c.trim())
         .filter(c => c)
-    const deduped = Array.from(new Set(cardList))
-    if (deduped.length === 0) return
+
+    if (cardList.length === 0) return
 
     try {
-        await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS cards_product_id_card_key_uq ON cards(product_id, card_key);`)
+        await db.execute(sql`DROP INDEX IF EXISTS cards_product_id_card_key_uq;`)
     } catch {
         // best effort
     }
 
-    try {
-        // @ts-ignore drizzle type supports this in runtime
-        await db.insert(cards).values(
-            deduped.map(key => ({
-                productId,
-                cardKey: key
-            }))
-        ).onConflictDoNothing()
-    } catch {
-        await db.insert(cards).values(
-            deduped.map(key => ({
-                productId,
-                cardKey: key
-            }))
-        )
-    }
+    await db.insert(cards).values(
+        cardList.map(key => ({
+            productId,
+            cardKey: key
+        }))
+    )
 
     revalidatePath('/admin')
     revalidatePath(`/admin/cards/${productId}`)
