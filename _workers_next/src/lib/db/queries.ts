@@ -326,7 +326,7 @@ export async function createReview(data: {
 }) {
     return await db.insert(reviews).values({
         ...data,
-        createdAt: Date.now()
+        createdAt: new Date()
     }).returning();
 }
 
