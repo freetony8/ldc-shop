@@ -14,9 +14,8 @@ import { SignInButton } from "@/components/signin-button"
 import { SignOutButton } from "@/components/signout-button"
 import { HeaderLogo, HeaderNav, HeaderSearch, HeaderUserMenuItems, HeaderUnreadBadge, LanguageSwitcher } from "@/components/header-client-parts"
 import { ModeToggle } from "@/components/mode-toggle"
-import { getSetting, recordLoginUser, setSetting, getUserUnreadNotificationCount, getLoginUserDesktopNotificationsEnabled } from "@/lib/db/queries"
+import { getSetting, recordLoginUser, getUserUnreadNotificationCount, getLoginUserDesktopNotificationsEnabled } from "@/lib/db/queries"
 import { isRegistryEnabled } from "@/lib/registry"
-import { CheckInButton } from "@/components/checkin-button"
 
 export async function SiteHeader() {
     const session = await auth()
@@ -31,34 +30,17 @@ export async function SiteHeader() {
     const isAdmin = user?.username && adminUsers.includes(user.username.toLowerCase()) || false
     const firstAdminName = rawAdminUsers[0]?.trim() // Get first admin name for branding
     let shopNameOverride: string | null = null
-    let shopLogoOverride: string | null = null
+    let shopLogoVersion: string | null = null
     try {
-        const [name, logo] = await Promise.all([
+        const [name, logoUpdatedAt] = await Promise.all([
             getSetting('shop_name'),
-            getSetting('shop_logo')
+            getSetting('shop_logo_updated_at')
         ])
         shopNameOverride = name
-        shopLogoOverride = logo
+        shopLogoVersion = logoUpdatedAt
     } catch {
         shopNameOverride = null
-        shopLogoOverride = null
-    }
-    if (isAdmin && user?.avatar_url && (!shopLogoOverride || !shopLogoOverride.trim())) {
-        try {
-            await setSetting('shop_logo', user.avatar_url)
-            await setSetting('shop_logo_updated_at', String(Date.now()))
-            shopLogoOverride = user.avatar_url
-        } catch {
-            // best effort
-        }
-    }
-
-    let checkinEnabled = true
-    try {
-        const v = await getSetting('checkin_enabled')
-        checkinEnabled = v !== 'false'
-    } catch {
-        checkinEnabled = true
+        shopLogoVersion = null
     }
 
     const registryEnabled = isRegistryEnabled()
@@ -98,7 +80,7 @@ export async function SiteHeader() {
         <header className="sticky top-0 z-40 w-full border-b border-border/20 bg-gradient-to-b from-background/90 via-background/70 to-background/55 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70 relative after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-gradient-to-r after:from-transparent after:via-primary/25 after:to-transparent">
             <div className="container flex h-16 items-center gap-2 md:gap-3">
                 <div className="flex items-center gap-4 md:gap-8 min-w-0">
-                    <HeaderLogo adminName={firstAdminName} shopNameOverride={shopNameOverride} shopLogoOverride={shopLogoOverride} />
+                    <HeaderLogo adminName={firstAdminName} shopNameOverride={shopNameOverride} shopLogoVersion={shopLogoVersion} />
                     <HeaderNav isAdmin={isAdmin} isLoggedIn={!!user} showNav={showNavigator} />
                 </div>
                 <div className="hidden md:flex flex-1 justify-center px-4">
@@ -119,22 +101,18 @@ export async function SiteHeader() {
                                         </Avatar>
                                     </Button>
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent className="w-56" align="end" forceMount>
-                                    <DropdownMenuLabel className="font-normal">
-                                        <div className="flex flex-col space-y-1">
-                                            <p className="text-sm font-medium leading-none">{user.name}</p>
-                                            <p className="text-xs leading-none text-muted-foreground">ID: {user.id}</p>
-                                        </div>
-                                    </DropdownMenuLabel>
-                                    <DropdownMenuSeparator />
-                                    <div className="px-2 py-1">
-                                        <CheckInButton enabled={checkinEnabled} />
-                                    </div>
-                                    <DropdownMenuSeparator />
-                                    <HeaderUserMenuItems isAdmin={isAdmin} showNav={showNavigator} />
-                                    <DropdownMenuSeparator />
-                                    <SignOutButton />
-                                </DropdownMenuContent>
+                                    <DropdownMenuContent className="w-56" align="end" forceMount>
+                                        <DropdownMenuLabel className="font-normal">
+                                            <div className="flex flex-col space-y-1">
+                                                <p className="text-sm font-medium leading-none">{user.name}</p>
+                                                <p className="text-xs leading-none text-muted-foreground">ID: {user.id}</p>
+                                            </div>
+                                        </DropdownMenuLabel>
+                                        <DropdownMenuSeparator />
+                                        <HeaderUserMenuItems isAdmin={isAdmin} showNav={showNavigator} />
+                                        <DropdownMenuSeparator />
+                                        <SignOutButton />
+                                    </DropdownMenuContent>
                             </DropdownMenu>
                         ) : (
                             <SignInButton />

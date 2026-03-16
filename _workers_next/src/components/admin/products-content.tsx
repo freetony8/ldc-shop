@@ -22,6 +22,8 @@ interface Product {
     isActive: boolean
     isHot: boolean
     sortOrder: number
+    variantGroupId?: string | null
+    variantLabel?: string | null
 }
 
 interface AdminProductsContentProps {
@@ -150,7 +152,16 @@ export function AdminProductsContent({ products, lowStockThreshold }: AdminProdu
                                     </Button>
                                 </div>
                                 </TableCell>
-                                <TableCell className="font-medium">{product.name}</TableCell>
+                                <TableCell className="font-medium">
+                                    <div className="flex flex-col gap-1">
+                                        <span>{product.name}</span>
+                                        {(product.variantGroupId || product.variantLabel) && (
+                                            <span className="text-xs text-muted-foreground">
+                                                {[product.variantGroupId, product.variantLabel].filter(Boolean).join(" · ")}
+                                            </span>
+                                        )}
+                                    </div>
+                                </TableCell>
                                 <TableCell>
                                     <div className="flex items-center gap-2">
                                         <span>{Number(product.price)}</span>

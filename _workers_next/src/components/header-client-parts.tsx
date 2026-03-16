@@ -4,30 +4,23 @@ import Link from "next/link"
 import { useI18n } from "@/lib/i18n/context"
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { LanguageSwitcher } from "@/components/language-switcher"
-import { ShoppingBag } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { usePathname, useRouter } from "next/navigation"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 import { getMyUnreadCount } from "@/actions/user-notifications"
 
-export function HeaderLogo({ adminName, shopNameOverride, shopLogoOverride }: { adminName?: string; shopNameOverride?: string | null; shopLogoOverride?: string | null }) {
+export function HeaderLogo({ adminName, shopNameOverride, shopLogoVersion }: { adminName?: string; shopNameOverride?: string | null; shopLogoVersion?: string | null }) {
     const { t } = useI18n()
     const override = shopNameOverride?.trim()
-    const logoUrl = shopLogoOverride?.trim()
     const shopName = adminName
         ? t('common.shopNamePattern', { name: adminName, appName: t('common.appName') })
         : t('common.appName')
+    const logoUrl = shopLogoVersion ? `/favicon?v=${shopLogoVersion}` : "/favicon"
 
     return (
         <Link href="/" className="flex items-center gap-2 min-w-0 group text-muted-foreground hover:text-primary transition-colors duration-200 hover:-translate-y-0.5">
-            {logoUrl ? (
-                <img src={logoUrl} alt="Logo" className="h-8 w-8 rounded-lg object-contain" />
-            ) : (
-                <div className="h-8 w-8 rounded-lg bg-foreground flex items-center justify-center transition-all duration-300 shadow-sm group-hover:shadow-md">
-                    <ShoppingBag className="h-4 w-4 text-background" />
-                </div>
-            )}
+            <img src={logoUrl} alt="Logo" className="h-8 w-8 rounded-lg object-cover shadow-sm transition-all duration-300 group-hover:shadow-md" />
             <span className="text-xs sm:text-sm font-semibold tracking-tight truncate max-w-[160px] sm:max-w-[220px] md:max-w-none">
                 {override || shopName}
             </span>

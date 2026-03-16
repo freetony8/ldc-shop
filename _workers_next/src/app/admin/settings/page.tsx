@@ -3,6 +3,9 @@ import { isRegistryEnabled } from "@/lib/registry"
 import { AdminSettingsContent } from "@/components/admin/settings-content"
 import { unstable_noStore } from "next/cache"
 import { cookies } from "next/headers"
+import { APP_VERSION } from "@/lib/version"
+import { resolveEffectiveShopLogo } from "@/lib/shop-logo"
+import { DEFAULT_THEME_FONT, isThemeFont } from "@/lib/theme-fonts"
 
 export default async function AdminSettingsPage() {
     const cookieStore = await cookies()
@@ -17,9 +20,10 @@ export default async function AdminSettingsPage() {
 
     const shopName = settingsMap['shop_name'] || null
     const shopDescription = settingsMap['shop_description'] || null
-    const shopLogo = settingsMap['shop_logo'] || null
+    const shopLogo = resolveEffectiveShopLogo(settingsMap['shop_logo'] || '', settingsMap['shop_logo_source'] || '').effectiveLogo || null
     const shopFooter = settingsMap['shop_footer'] || null
     const themeColor = settingsMap['theme_color'] || null
+    const themeFont = isThemeFont(settingsMap['theme_font'] || '') ? settingsMap['theme_font'] : DEFAULT_THEME_FONT
 
     const lowStockThreshold = Number.parseInt(settingsMap['low_stock_threshold'] || '5', 10) || 5
     const checkinReward = Number.parseInt(settingsMap['checkin_reward'] || '10', 10) || 10
@@ -38,6 +42,7 @@ export default async function AdminSettingsPage() {
             shopLogo={shopLogo}
             shopFooter={shopFooter}
             themeColor={themeColor}
+            themeFont={themeFont}
             visitorCount={visitorCount}
             lowStockThreshold={lowStockThreshold}
             checkinReward={checkinReward}
@@ -48,6 +53,7 @@ export default async function AdminSettingsPage() {
             refundReclaimCards={refundReclaimCards}
             registryHideNav={registryHideNav}
             registryEnabled={isRegistryEnabled()}
+            currentVersion={APP_VERSION}
         />
     )
 }

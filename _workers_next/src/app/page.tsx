@@ -32,7 +32,7 @@ export default async function Home({
   const trustLevel = Number.isFinite(Number(session?.user?.trustLevel)) ? Number(session?.user?.trustLevel) : 0
 
   // Run all independent queries in parallel for better performance
-  const [products, announcement, visitorCount, categoryConfig, productCategories, wishlistEnabled] = await Promise.all([
+  const [products, announcement, visitorCount, categoryConfig, productCategories, wishlistEnabled, checkinEnabled] = await Promise.all([
     getActiveProducts({ isLoggedIn, trustLevel }).catch(() => []),
     getActiveAnnouncement().catch(() => null),
     getVisitorCount().catch(() => 0),
@@ -44,44 +44,56 @@ export default async function Home({
       } catch {
         return false
       }
+    })(),
+    (async () => {
+      try {
+        return (await getSetting('checkin_enabled')) !== 'false'
+      } catch {
+        return true
+      }
     })()
   ]);
 
 
   const total = products.length;
 
-  const liveStats = await getLiveCardStats(products.map((p: any) => p.id)).catch(() => new Map());
-
-  /* REMOVED: Separate ratings fetch - using pre-computed values in product table
-  const productIds = products.map((p: any) => p.id).filter(Boolean);
-  const sortedIds = [...productIds].sort();
-  let ratingsMap = new Map<string, { average: number; count: number }>();
-  try {
-    ratingsMap = await unstable_cache(
-      async () => getProductRatings(sortedIds),
-      ["product-ratings", ...sortedIds],
-      { revalidate: CACHE_TTL_SECONDS, tags: [TAG_RATINGS] }
-    )();
-  } catch {
-    // Reviews table might not exist yet
-  }
-  */
+  const allProductIds = products.flatMap((p: any) => p.allVariantIds && p.allVariantIds.length > 1 ? p.allVariantIds : [p.id]);
+  const liveStats = await getLiveCardStats(allProductIds).catch(() => new Map());
 
   const productsWithRatings = products.map((p: any) => {
-    const stat = liveStats.get(p.id) || { unused: 0, available: 0, locked: 0 };
-    const available = p.isShared
-      ? (stat.unused > 0 ? INFINITE_STOCK : 0)
-      : stat.available;
-    const locked = stat.locked;
-    const stockTotal = available >= INFINITE_STOCK ? INFINITE_STOCK : (available + locked);
-    // const rating = ratingsMap.get(p.id) || { average: 0, count: 0 };
+    const isGroup = p.allVariantIds && p.allVariantIds.length > 1;
+
+    let stockTotal: number;
+    if (isGroup) {
+      let groupAvailable = 0;
+      let groupLocked = 0;
+      let hasInfinite = false;
+      for (const vid of p.allVariantIds) {
+        const vStat = liveStats.get(vid) || { unused: 0, available: 0, locked: 0 };
+        if (vStat.available >= INFINITE_STOCK || (p.groupShared && vStat.unused > 0)) {
+          hasInfinite = true;
+        }
+        groupAvailable += vStat.available;
+        groupLocked += vStat.locked;
+      }
+      stockTotal = hasInfinite ? INFINITE_STOCK : (groupAvailable + groupLocked);
+    } else {
+      const stat = liveStats.get(p.id) || { unused: 0, available: 0, locked: 0 };
+      const available = p.isShared
+        ? (stat.unused > 0 ? INFINITE_STOCK : 0)
+        : stat.available;
+      const locked = stat.locked;
+      stockTotal = available >= INFINITE_STOCK ? INFINITE_STOCK : (available + locked);
+    }
+
     return {
       ...p,
       stockCount: stockTotal,
-      soldCount: p.sold || 0,
+      soldCount: isGroup ? (p.totalSold || 0) : (p.sold || 0),
+      isHot: isGroup ? (p.groupHot || false) : p.isHot,
       descriptionPlain: stripMarkdown(p.description || ''),
-      rating: Number(p.rating || 0),
-      reviewCount: Number(p.reviewCount || 0)
+      rating: isGroup ? Number(p.avgRating || 0) : Number(p.rating || 0),
+      reviewCount: isGroup ? Number(p.totalReviewCount || 0) : Number(p.reviewCount || 0)
     };
   });
 
@@ -109,6 +121,8 @@ export default async function Home({
     categoryConfig={categoryConfig}
     pendingOrders={pendingOrders}
     wishlistEnabled={wishlistEnabled}
+    isLoggedIn={isLoggedIn}
+    checkinEnabled={checkinEnabled}
     filters={{ q, category: category || null, sort }}
     pagination={{ page, pageSize: PAGE_SIZE, total }}
   />;

@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from "react"
+import { type ChangeEvent, useRef, useState } from "react"
 import { useI18n } from "@/lib/i18n/context"
+import { prepareUploadedImage } from "@/lib/client-image"
+import { DEFAULT_THEME_FONT, getThemeFontStack, THEME_FONT_VALUES, type ThemeFont } from "@/lib/theme-fonts"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,9 +11,9 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { TrendingUp, ShoppingCart, CreditCard, Package, Users } from "lucide-react"
-import { saveShopName, saveShopDescription, saveShopLogo, saveShopFooter, saveThemeColor, saveLowStockThreshold, saveCheckinReward, saveCheckinEnabled, saveWishlistEnabled, saveNoIndex, saveRefundReclaimCards, saveRegistryHideNav } from "@/actions/admin"
-import { checkForUpdates } from "@/actions/update-check"
-import { joinRegistry } from "@/actions/registry"
+import { saveShopName, saveShopDescription, saveShopLogo, saveShopFooter, saveThemeColor, saveThemeFont, saveLowStockThreshold, saveCheckinReward, saveCheckinEnabled, saveWishlistEnabled, saveNoIndex, saveRefundReclaimCards, saveRegistryHideNav } from "@/actions/admin"
+import { joinRegistry, leaveRegistry } from "@/actions/registry"
+import { checkForUpdatesClient, type ClientUpdateCheckResult } from "@/lib/update-check-client"
 import { toast } from "sonner"
 
 interface Stats {
@@ -28,6 +30,7 @@ interface AdminSettingsContentProps {
     shopLogo: string | null
     shopFooter: string | null
     themeColor: string | null
+    themeFont: string | null
     visitorCount: number
     lowStockThreshold: number
     checkinReward: number
@@ -38,15 +41,10 @@ interface AdminSettingsContentProps {
     registryHideNav: boolean
     registryOptIn: boolean
     registryEnabled: boolean
+    currentVersion: string
 }
 
-interface UpdateInfo {
-    hasUpdate: boolean
-    currentVersion: string
-    latestVersion: string | null
-    releaseUrl: string | null
-    error?: string
-}
+type UpdateInfo = ClientUpdateCheckResult
 
 const THEME_COLORS = [
     { value: 'black', hue: 0, chroma: 0, preview: 'oklch(0.18 0 0)' },
@@ -64,8 +62,11 @@ const THEME_COLORS = [
     { value: 'pink', hue: 330 },
 ]
 
-export function AdminSettingsContent({ stats, shopName, shopDescription, shopLogo, shopFooter, themeColor, visitorCount, lowStockThreshold, checkinReward, checkinEnabled, wishlistEnabled, noIndexEnabled, refundReclaimCards, registryHideNav, registryOptIn, registryEnabled }: AdminSettingsContentProps) {
+const SHOP_LOGO_UPLOAD_MAX_BYTES = 500 * 1024
+
+export function AdminSettingsContent({ stats, shopName, shopDescription, shopLogo, shopFooter, themeColor, themeFont, visitorCount, lowStockThreshold, checkinReward, checkinEnabled, wishlistEnabled, noIndexEnabled, refundReclaimCards, registryHideNav, registryOptIn, registryEnabled, currentVersion }: AdminSettingsContentProps) {
     const { t } = useI18n()
+    const shopLogoFileInputRef = useRef<HTMLInputElement | null>(null)
 
     // State
     const [shopNameValue, setShopNameValue] = useState(shopName || '')
@@ -78,6 +79,8 @@ export function AdminSettingsContent({ stats, shopName, shopDescription, shopLog
     const [savingShopFooter, setSavingShopFooter] = useState(false)
     const [selectedTheme, setSelectedTheme] = useState(themeColor || 'purple')
     const [savingTheme, setSavingTheme] = useState(false)
+    const [selectedThemeFont, setSelectedThemeFont] = useState<ThemeFont>((themeFont as ThemeFont) || DEFAULT_THEME_FONT)
+    const [savingThemeFont, setSavingThemeFont] = useState(false)
     const [thresholdValue, setThresholdValue] = useState(String(lowStockThreshold || 5))
     const [savingThreshold, setSavingThreshold] = useState(false)
     const [rewardValue, setRewardValue] = useState(String(checkinReward || 10))
@@ -93,9 +96,13 @@ export function AdminSettingsContent({ stats, shopName, shopDescription, shopLog
     const [checkingUpdate, setCheckingUpdate] = useState(false)
     const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
     const [submittingRegistry, setSubmittingRegistry] = useState(false)
+    const [leavingRegistry, setLeavingRegistry] = useState(false)
     const [registryJoined, setRegistryJoined] = useState(registryOptIn)
     const [hideRegistryNav, setHideRegistryNav] = useState(registryHideNav)
     const [savingRegistryNav, setSavingRegistryNav] = useState(false)
+    const [processingShopLogoFile, setProcessingShopLogoFile] = useState(false)
+    const usingUploadedShopLogo = shopLogoValue.startsWith('data:')
+    const shopLogoInputValue = usingUploadedShopLogo ? '' : shopLogoValue
 
     const handleSaveShopName = async () => {
         const trimmed = shopNameValue.trim()
@@ -135,6 +142,39 @@ export function AdminSettingsContent({ stats, shopName, shopDescription, shopLog
             toast.error(e.message)
         } finally {
             setSavingShopLogo(false)
+        }
+    }
+
+    const handleSelectShopLogoFile = async (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0]
+        event.target.value = ''
+        if (!file) return
+
+        setProcessingShopLogoFile(true)
+        try {
+            const prepared = await prepareUploadedImage(file, {
+                maxBytes: SHOP_LOGO_UPLOAD_MAX_BYTES,
+                maxDimension: 512,
+            })
+            setShopLogoValue(prepared.dataUrl)
+            toast.success(
+                prepared.wasCompressed
+                    ? t('admin.settings.shopLogoFileCompressed')
+                    : t('admin.settings.shopLogoFileReady')
+            )
+        } catch (error) {
+            const message = error instanceof Error ? error.message : ''
+            if (message === 'image_compression_unsupported') {
+                toast.error(t('admin.settings.shopLogoFileCompressionUnsupported'))
+                return
+            }
+            if (message === 'image_compression_failed') {
+                toast.error(t('admin.settings.shopLogoFileCompressionFailed'))
+                return
+            }
+            toast.error(t('admin.settings.shopLogoFileInvalid'))
+        } finally {
+            setProcessingShopLogoFile(false)
         }
     }
 
@@ -254,10 +294,24 @@ export function AdminSettingsContent({ stats, shopName, shopDescription, shopLog
         }
     }
 
+    const handleSaveThemeFont = async (font: ThemeFont) => {
+        setSavingThemeFont(true)
+        setSelectedThemeFont(font)
+        try {
+            await saveThemeFont(font)
+            toast.success(t('common.success'))
+            window.location.reload()
+        } catch (e: any) {
+            toast.error(e.message)
+        } finally {
+            setSavingThemeFont(false)
+        }
+    }
+
     const handleCheckUpdate = async () => {
         setCheckingUpdate(true)
         try {
-            const result = await checkForUpdates()
+            const result = await checkForUpdatesClient(currentVersion)
             setUpdateInfo(result)
             if (result.error) {
                 toast.error(t('update.checkFailed'))
@@ -272,7 +326,7 @@ export function AdminSettingsContent({ stats, shopName, shopDescription, shopLog
     }
 
     const handleRegistrySubmit = async () => {
-        if (submittingRegistry) return
+        if (submittingRegistry || leavingRegistry) return
         setSubmittingRegistry(true)
         try {
             const result = await joinRegistry(window.location.origin)
@@ -281,10 +335,29 @@ export function AdminSettingsContent({ stats, shopName, shopDescription, shopLog
             }
             toast.success(t('registry.submitSuccess'))
             setRegistryJoined(true)
+            setHideRegistryNav(false)
         } catch {
             toast.error(t('registry.submitFailed'))
         } finally {
             setSubmittingRegistry(false)
+        }
+    }
+
+    const handleRegistryLeave = async () => {
+        if (submittingRegistry || leavingRegistry) return
+        setLeavingRegistry(true)
+        try {
+            const result = await leaveRegistry()
+            if (!result.ok) {
+                throw new Error(result.error || "leave_failed")
+            }
+            toast.success(t('registry.leaveSuccess'))
+            setRegistryJoined(false)
+            setHideRegistryNav(true)
+        } catch {
+            toast.error(t('registry.leaveFailed'))
+        } finally {
+            setLeavingRegistry(false)
         }
     }
 
@@ -355,16 +428,14 @@ export function AdminSettingsContent({ stats, shopName, shopDescription, shopLog
                 </CardHeader>
                 <CardContent className="space-y-4">
                     <div className="grid gap-2 md:max-w-xl">
-                        <div className="flex gap-2">
-                            <div className="floating-field flex-1 min-w-0">
-                                <Input
-                                    id="shop-name"
-                                    value={shopNameValue}
-                                    onChange={(e) => setShopNameValue(e.target.value)}
-                                    placeholder=" "
-                                />
-                                <Label htmlFor="shop-name" className="floating-label">{t('admin.settings.shopName')}</Label>
-                            </div>
+                        <Label htmlFor="shop-name">{t('admin.settings.shopName')}</Label>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                            <Input
+                                id="shop-name"
+                                value={shopNameValue}
+                                onChange={(e) => setShopNameValue(e.target.value)}
+                                className="flex-1"
+                            />
                             <Button onClick={handleSaveShopName} disabled={savingShopName}>
                                 {savingShopName ? t('common.processing') : t('common.save')}
                             </Button>
@@ -372,37 +443,58 @@ export function AdminSettingsContent({ stats, shopName, shopDescription, shopLog
                         <p className="text-xs text-muted-foreground">{t('admin.settings.shopNameHint')}</p>
                     </div>
                     <div className="grid gap-2 md:max-w-xl">
-                        <div className="flex gap-2">
-                            <div className="floating-field flex-1 min-w-0">
-                                <Input
-                                    id="shop-desc"
-                                    value={shopDescValue}
-                                    onChange={(e) => setShopDescValue(e.target.value)}
-                                    placeholder=" "
-                                />
-                                <Label htmlFor="shop-desc" className="floating-label">{t('admin.settings.shopDescription')}</Label>
-                            </div>
+                        <Label htmlFor="shop-desc">{t('admin.settings.shopDescription')}</Label>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                            <Input
+                                id="shop-desc"
+                                value={shopDescValue}
+                                onChange={(e) => setShopDescValue(e.target.value)}
+                                className="flex-1"
+                            />
                             <Button variant="outline" onClick={handleSaveShopDesc} disabled={savingShopDesc}>
                                 {savingShopDesc ? t('common.processing') : t('common.save')}
                             </Button>
                         </div>
                     </div>
                     <div className="grid gap-2 md:max-w-xl">
-                        <div className="flex gap-2">
-                            <div className="floating-field flex-1 min-w-0">
-                                <Input
-                                    id="shop-logo"
-                                    value={shopLogoValue}
-                                    onChange={(e) => setShopLogoValue(e.target.value)}
-                                    placeholder=" "
-                                />
-                                <Label htmlFor="shop-logo" className="floating-label">{t('admin.settings.shopLogo')}</Label>
-                            </div>
+                        <Label htmlFor="shop-logo">{t('admin.settings.shopLogo')}</Label>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                            <Input
+                                id="shop-logo"
+                                value={shopLogoInputValue}
+                                onChange={(e) => setShopLogoValue(e.target.value)}
+                                className="flex-1"
+                            />
                             <Button variant="outline" onClick={handleSaveShopLogo} disabled={savingShopLogo}>
                                 {savingShopLogo ? t('common.processing') : t('common.save')}
                             </Button>
                         </div>
                         <p className="text-xs text-muted-foreground">{t('admin.settings.shopLogoHint')}</p>
+                        {usingUploadedShopLogo && (
+                            <p className="text-xs text-muted-foreground">{t('admin.settings.shopLogoUploadedHint')}</p>
+                        )}
+                        <div className="flex flex-col gap-2 rounded-lg border border-dashed border-border/60 bg-muted/20 p-3">
+                            <Label htmlFor="shop-logo-file" className="text-sm font-medium">{t('admin.settings.shopLogoUpload')}</Label>
+                            <input
+                                ref={shopLogoFileInputRef}
+                                id="shop-logo-file"
+                                type="file"
+                                className="hidden"
+                                accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/x-icon,image/bmp,.png,.jpg,.jpeg,.webp,.gif,.svg,.ico,.bmp"
+                                onChange={handleSelectShopLogoFile}
+                                disabled={processingShopLogoFile}
+                            />
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="w-fit"
+                                onClick={() => shopLogoFileInputRef.current?.click()}
+                                disabled={processingShopLogoFile}
+                            >
+                                {processingShopLogoFile ? t('common.processing') : t('admin.settings.shopLogoUpload')}
+                            </Button>
+                            <p className="text-xs text-muted-foreground">{t('admin.settings.shopLogoUploadHint')}</p>
+                        </div>
                         {shopLogoValue && (
                             <div className="flex items-center gap-4 p-2 border rounded-md bg-muted/50">
                                 <img src={shopLogoValue} alt="Logo preview" className="h-8 w-8 object-contain" />
@@ -411,17 +503,15 @@ export function AdminSettingsContent({ stats, shopName, shopDescription, shopLog
                         )}
                     </div>
                     <div className="grid gap-2 md:max-w-xs">
-                        <div className="flex gap-2">
-                            <div className="floating-field flex-1 min-w-0">
-                                <Input
-                                    id="low-stock"
-                                    type="number"
-                                    value={thresholdValue}
-                                    onChange={(e) => setThresholdValue(e.target.value)}
-                                    placeholder=" "
-                                />
-                                <Label htmlFor="low-stock" className="floating-label">{t('admin.settings.lowStockThreshold')}</Label>
-                            </div>
+                        <Label htmlFor="low-stock">{t('admin.settings.lowStockThreshold')}</Label>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                            <Input
+                                id="low-stock"
+                                type="number"
+                                value={thresholdValue}
+                                onChange={(e) => setThresholdValue(e.target.value)}
+                                className="flex-1"
+                            />
                             <Button variant="outline" onClick={handleSaveThreshold} disabled={savingThreshold}>
                                 {savingThreshold ? t('common.processing') : t('common.save')}
                             </Button>
@@ -558,6 +648,45 @@ export function AdminSettingsContent({ stats, shopName, shopDescription, shopLog
                 </CardContent>
             </Card>
 
+            <Card>
+                <CardHeader>
+                    <CardTitle>{t('admin.settings.themeFont.title')}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <p className="text-sm text-muted-foreground">{t('admin.settings.themeFont.hint')}</p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        {THEME_FONT_VALUES.map((value) => {
+                            const active = selectedThemeFont === value
+                            return (
+                                <button
+                                    key={value}
+                                    type="button"
+                                    onClick={() => handleSaveThemeFont(value)}
+                                    disabled={savingThemeFont}
+                                    className={[
+                                        "rounded-xl border p-4 text-left transition-all",
+                                        active ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-border/60 hover:border-primary/40 hover:bg-muted/30",
+                                        savingThemeFont ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+                                    ].join(' ')}
+                                >
+                                    <div className="flex items-center justify-between gap-3">
+                                        <span className="text-sm font-semibold">{t(`admin.settings.themeFont.${value}`)}</span>
+                                        {active && <span className="inline-block h-2.5 w-2.5 rounded-full bg-primary" />}
+                                    </div>
+                                    <p
+                                        className="mt-3 text-xl text-foreground"
+                                        style={{ fontFamily: getThemeFontStack(value) }}
+                                    >
+                                        Ag 你好 字体
+                                    </p>
+                                </button>
+                            )
+                        })}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{t(`admin.settings.themeFont.${selectedThemeFont}`)}</p>
+                </CardContent>
+            </Card>
+
             {registryEnabled && (
                 <Card>
                     <CardHeader>
@@ -566,9 +695,14 @@ export function AdminSettingsContent({ stats, shopName, shopDescription, shopLog
                     <CardContent className="space-y-3">
                         <p className="text-sm text-muted-foreground">{t('registry.description')}</p>
                         <div className="flex flex-wrap items-center gap-3">
-                            <Button onClick={handleRegistrySubmit} disabled={submittingRegistry}>
+                            <Button onClick={handleRegistrySubmit} disabled={submittingRegistry || leavingRegistry}>
                                 {registryJoined ? t('registry.resubmit') : t('registry.joinNow')}
                             </Button>
+                            {registryJoined && (
+                                <Button variant="destructive" onClick={handleRegistryLeave} disabled={submittingRegistry || leavingRegistry}>
+                                    {t('registry.leaveNow')}
+                                </Button>
+                            )}
                             <span className={registryJoined ? "text-green-600 text-sm" : "text-muted-foreground text-sm"}>
                                 {registryJoined ? t('registry.statusJoined') : t('registry.statusNotJoined')}
                             </span>

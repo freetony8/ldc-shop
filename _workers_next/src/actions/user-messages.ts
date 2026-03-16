@@ -6,6 +6,7 @@ import { eq, sql } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { checkAdmin } from "@/actions/admin"
 import { revalidatePath } from "next/cache"
+import { notifyAdminUserMessage } from "@/lib/notifications"
 
 async function ensureUserMessagesTable() {
     await db.run(sql`
@@ -57,6 +58,17 @@ export async function sendUserMessage(title: string, body: string) {
         createdAt: new Date()
     })
 
+    try {
+        await notifyAdminUserMessage({
+            userId,
+            username,
+            title: cleanTitle.slice(0, 120),
+            body: cleanBody.slice(0, 2000)
+        })
+    } catch (error) {
+        console.error("[UserMessage] notify admin failed:", error)
+    }
+
     revalidatePath("/admin/messages")
     return { success: true }
 }
@@ -83,6 +95,16 @@ export async function deleteUserMessage(id: number) {
     await ensureUserMessagesTable()
     await db.delete(userMessages).where(eq(userMessages.id, id))
     revalidatePath("/admin/messages")
+    return { success: true }
+}
+
+export async function clearMyMessages() {
+    const session = await auth()
+    const userId = session?.user?.id
+    if (!userId) return { success: false, error: "Unauthorized" }
+
+    await ensureUserMessagesTable()
+    await db.delete(userMessages).where(eq(userMessages.userId, userId))
     return { success: true }
 }
 

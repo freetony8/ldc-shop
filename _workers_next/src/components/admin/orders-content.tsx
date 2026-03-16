@@ -14,9 +14,12 @@ import { Button } from "@/components/ui/button"
 import { AdminOrderActions } from "@/components/admin/order-actions"
 import { deleteOrders } from "@/actions/admin-orders"
 import { toast } from "sonner"
+import { getDisplayUsername, getExternalProfileUrl } from "@/lib/user-profile-link"
 
 interface Order {
     orderId: string
+    productId?: string | null
+    userId: string | null
     username: string | null
     email: string | null
     productName: string
@@ -47,7 +50,7 @@ function exportUrl(params: Record<string, string | number | undefined | null>) {
         if (!str) return
         sp.set(k, str)
     })
-    return `/admin/export/download?${sp.toString()}`
+    return `/admin/data/download?${sp.toString()}`
 }
 
 export function AdminOrdersContent({
@@ -57,6 +60,7 @@ export function AdminOrdersContent({
     pageSize,
     query,
     status,
+    productVariantLabels = {},
 }: {
     orders: Order[]
     total: number
@@ -64,6 +68,7 @@ export function AdminOrdersContent({
     pageSize: number
     query: string
     status: string
+    productVariantLabels?: Record<string, string | null>
 }) {
     const { t } = useI18n()
     const router = useRouter()
@@ -294,12 +299,12 @@ export function AdminOrdersContent({
                                     {order.username ? (
                                         <div className="space-y-0.5">
                                             <a
-                                                href={`https://linux.do/u/${order.username}`}
+                                                href={getExternalProfileUrl(order.username, order.userId) || "#"}
                                                 target="_blank"
                                                 rel="noreferrer"
                                                 className="font-medium text-sm hover:underline text-primary"
                                             >
-                                                {order.username}
+                                                {getDisplayUsername(order.username, order.userId)}
                                             </a>
                                             {order.email && (
                                                 <div className="text-xs text-muted-foreground">
@@ -311,7 +316,12 @@ export function AdminOrdersContent({
                                         <span className="font-medium text-sm text-muted-foreground">Guest</span>
                                     )}
                                 </TableCell>
-                                <TableCell>{order.productName}</TableCell>
+                                <TableCell>
+                                    <span>{order.productName}</span>
+                                    {order.productId && productVariantLabels[order.productId] && (
+                                        <span className="ml-1.5 text-muted-foreground">· {productVariantLabels[order.productId]}</span>
+                                    )}
+                                </TableCell>
                                 <TableCell>{Number(order.amount)}</TableCell>
                                 <TableCell>
                                     <Badge variant={getStatusBadgeVariant(order.status)} className="uppercase text-xs">

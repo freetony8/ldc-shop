@@ -22,6 +22,9 @@ export const products = sqliteTable('products', {
     rating: integer('rating', { mode: 'number' }).default(0), // Average rating (stored as integer/real but using number mode for safety with existing code if it was float. Actually sqliteTable 'integer' is usually int. Better use 'real' for average, but Drizzle sqlite-core uses 'real' or 'numeric'. Let's check imports.)
     reviewCount: integer('review_count').default(0),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).$defaultFn(() => new Date()), // Use integer timestamp (ms)
+    variantGroupId: text('variant_group_id'),
+    variantLabel: text('variant_label'),
+    purchaseQuestions: text('purchase_questions'),
 });
 
 // Cards (Stock)

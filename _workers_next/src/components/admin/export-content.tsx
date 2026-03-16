@@ -13,8 +13,7 @@ import { cn } from "@/lib/utils"
 
 function downloadUrl(params: Record<string, string>) {
   const search = new URLSearchParams(params)
-  // Ensure we point to the correct download API
-  return `/admin/export/download?${search.toString()}`.replace('/export/', '/data/')
+  return `/admin/data/download?${search.toString()}`
 }
 
 export function AdminDataContent({ shopName }: { shopName: string | null }) {
