@@ -5,16 +5,18 @@ import { useI18n } from "@/lib/i18n/context"
 import { prepareUploadedImage } from "@/lib/client-image"
 import { DEFAULT_THEME_FONT, getThemeFontStack, THEME_FONT_VALUES, type ThemeFont } from "@/lib/theme-fonts"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { TrendingUp, ShoppingCart, CreditCard, Package, Users } from "lucide-react"
-import { saveShopName, saveShopDescription, saveShopLogo, saveShopFooter, saveThemeColor, saveThemeFont, saveLowStockThreshold, saveCheckinReward, saveCheckinEnabled, saveWishlistEnabled, saveNoIndex, saveRefundReclaimCards, saveRegistryHideNav } from "@/actions/admin"
+import { saveShopName, saveShopDescription, saveShopLogo, saveShopFooter, saveThemeColor, saveThemeFont, saveLowStockThreshold, saveCheckinReward, saveCheckinEnabled, saveWishlistEnabled, saveNoIndex, saveRefundReclaimCards, saveRegistryHideNav, saveCurrencyUnit } from "@/actions/admin"
 import { joinRegistry, leaveRegistry } from "@/actions/registry"
 import { checkForUpdatesClient, type ClientUpdateCheckResult } from "@/lib/update-check-client"
 import { toast } from "sonner"
+import { normalizeCurrencyUnit } from "@/lib/currency-unit"
 
 interface Stats {
     today: { count: number; revenue: number }
@@ -29,6 +31,7 @@ interface AdminSettingsContentProps {
     shopDescription: string | null
     shopLogo: string | null
     shopFooter: string | null
+    currencyUnit: string | null
     themeColor: string | null
     themeFont: string | null
     visitorCount: number
@@ -64,8 +67,9 @@ const THEME_COLORS = [
 
 const SHOP_LOGO_UPLOAD_MAX_BYTES = 500 * 1024
 
-export function AdminSettingsContent({ stats, shopName, shopDescription, shopLogo, shopFooter, themeColor, themeFont, visitorCount, lowStockThreshold, checkinReward, checkinEnabled, wishlistEnabled, noIndexEnabled, refundReclaimCards, registryHideNav, registryOptIn, registryEnabled, currentVersion }: AdminSettingsContentProps) {
+export function AdminSettingsContent({ stats, shopName, shopDescription, shopLogo, shopFooter, currencyUnit, themeColor, themeFont, visitorCount, lowStockThreshold, checkinReward, checkinEnabled, wishlistEnabled, noIndexEnabled, refundReclaimCards, registryHideNav, registryOptIn, registryEnabled, currentVersion }: AdminSettingsContentProps) {
     const { t } = useI18n()
+    const router = useRouter()
     const shopLogoFileInputRef = useRef<HTMLInputElement | null>(null)
 
     // State
@@ -77,6 +81,8 @@ export function AdminSettingsContent({ stats, shopName, shopDescription, shopLog
     const [savingShopLogo, setSavingShopLogo] = useState(false)
     const [shopFooterValue, setShopFooterValue] = useState(shopFooter || '')
     const [savingShopFooter, setSavingShopFooter] = useState(false)
+    const [currencyUnitValue, setCurrencyUnitValue] = useState(currencyUnit || '')
+    const [savingCurrencyUnit, setSavingCurrencyUnit] = useState(false)
     const [selectedTheme, setSelectedTheme] = useState(themeColor || 'purple')
     const [savingTheme, setSavingTheme] = useState(false)
     const [selectedThemeFont, setSelectedThemeFont] = useState<ThemeFont>((themeFont as ThemeFont) || DEFAULT_THEME_FONT)
@@ -142,6 +148,20 @@ export function AdminSettingsContent({ stats, shopName, shopDescription, shopLog
             toast.error(e.message)
         } finally {
             setSavingShopLogo(false)
+        }
+    }
+
+    const handleSaveCurrencyUnit = async () => {
+        setSavingCurrencyUnit(true)
+        try {
+            await saveCurrencyUnit(currencyUnitValue)
+            setCurrencyUnitValue(normalizeCurrencyUnit(currencyUnitValue) || '')
+            router.refresh()
+            toast.success(t('common.success'))
+        } catch (e: any) {
+            toast.error(e.message)
+        } finally {
+            setSavingCurrencyUnit(false)
         }
     }
 
@@ -501,6 +521,22 @@ export function AdminSettingsContent({ stats, shopName, shopDescription, shopLog
                                 <span className="text-sm text-muted-foreground">{t('admin.settings.logoPreview')}</span>
                             </div>
                         )}
+                    </div>
+                    <div className="grid gap-2 md:max-w-sm">
+                        <Label htmlFor="currency-unit">{t('admin.settings.currencyUnit')}</Label>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                            <Input
+                                id="currency-unit"
+                                value={currencyUnitValue}
+                                onChange={(e) => setCurrencyUnitValue(e.target.value)}
+                                placeholder={t('admin.settings.currencyUnitPlaceholder')}
+                                className="flex-1"
+                            />
+                            <Button variant="outline" onClick={handleSaveCurrencyUnit} disabled={savingCurrencyUnit}>
+                                {savingCurrencyUnit ? t('common.processing') : t('common.save')}
+                            </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{t('admin.settings.currencyUnitHint')}</p>
                     </div>
                     <div className="grid gap-2 md:max-w-xs">
                         <Label htmlFor="low-stock">{t('admin.settings.lowStockThreshold')}</Label>

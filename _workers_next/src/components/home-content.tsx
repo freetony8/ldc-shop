@@ -334,11 +334,11 @@ export function HomeContent({
                                             fill
                                             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                                             priority={index < 2}
-                                            className="object-contain p-4 transition-transform duration-700 ease-out group-hover:scale-[1.04]"
+                                            className="object-contain p-2 md:p-3 transition-transform duration-700 ease-out group-hover:scale-[1.04]"
                                         />
                                     ) : (
-                                        <div className="flex h-full items-center justify-center transition-transform duration-700 ease-out group-hover:scale-[1.04]">
-                                            <ProductImagePlaceholder productId={product.id} productName={product.name} size="sm" />
+                                        <div className="flex h-full items-center justify-center p-2 md:p-3 transition-transform duration-700 ease-out group-hover:scale-[1.04]">
+                                            <ProductImagePlaceholder productId={product.id} productName={product.name} size="sm" fill />
                                         </div>
                                     )}
                                     <div className="absolute left-3 right-3 top-3 flex items-start justify-between gap-2">

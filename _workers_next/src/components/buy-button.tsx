@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Loader2, Coins } from "lucide-react"
 import { toast } from "sonner"
 import { useI18n } from "@/lib/i18n/context"
+import { cn } from "@/lib/utils"
 
 interface BuyButtonProps {
     productId: string
@@ -20,9 +21,10 @@ interface BuyButtonProps {
     autoOpen?: boolean
     emailConfigured?: boolean
     answers?: string[]
+    className?: string
 }
 
-export function BuyButton({ productId, price, productName, disabled, quantity = 1, autoOpen = false, emailConfigured = false, answers }: BuyButtonProps) {
+export function BuyButton({ productId, price, productName, disabled, quantity = 1, autoOpen = false, emailConfigured = false, answers, className }: BuyButtonProps) {
     const [loading, setLoading] = useState(false)
     const [open, setOpen] = useState(false)
     const [points, setPoints] = useState(0)
@@ -42,8 +44,10 @@ export function BuyButton({ productId, price, productName, disabled, quantity = 
         try {
             const p = await getUserPoints()
             setPoints(p)
+            setUsePoints(p > 0)
         } catch (e) {
             console.error(e)
+            setUsePoints(false)
         } finally {
             setPointsLoading(false)
         }
@@ -129,7 +133,10 @@ export function BuyButton({ productId, price, productName, disabled, quantity = 
         <>
             <Button
                 size="lg"
-                className="h-12 w-full rounded-xl bg-primary px-6 font-medium text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/25 active:scale-[0.99] disabled:opacity-50"
+                className={cn(
+                    "h-12 w-full rounded-xl bg-primary px-6 font-medium text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/25 active:scale-[0.99] disabled:opacity-50",
+                    className
+                )}
                 onClick={handleInitialClick}
                 disabled={disabled}
             >

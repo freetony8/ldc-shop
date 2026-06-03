@@ -12,6 +12,11 @@ import { type ChangeEvent, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import { useI18n } from "@/lib/i18n/context"
+import {
+    PRODUCT_GALLERY_MAX_ITEMS,
+    normalizeProductImageRefs,
+    parseStoredProductImages,
+} from "@/lib/product-images"
 
 const PRODUCT_IMAGE_UPLOAD_MAX_BYTES = 500 * 1024
 
@@ -20,13 +25,17 @@ export default function ProductForm({ product, categories = [] }: { product?: an
     const [loading, setLoading] = useState(false)
     const submitLock = useRef(false)
     const productImageFileInputRef = useRef<HTMLInputElement | null>(null)
+    const productGalleryFileInputRef = useRef<HTMLInputElement | null>(null)
     const [currentProduct, setCurrentProduct] = useState(product)
     const [formSeed, setFormSeed] = useState(0)
     // Only show warning section if purchaseWarning has actual content
     const [showWarning, setShowWarning] = useState(Boolean(product?.purchaseWarning && String(product.purchaseWarning).trim()))
     const [visibilityLevel, setVisibilityLevel] = useState(String(product?.visibilityLevel ?? -1))
     const [productImageValue, setProductImageValue] = useState(product?.image || '')
+    const [productGalleryValues, setProductGalleryValues] = useState<string[]>(() => parseStoredProductImages(product?.productImages))
+    const [galleryImageInputValue, setGalleryImageInputValue] = useState('')
     const [processingProductImageFile, setProcessingProductImageFile] = useState(false)
+    const [processingProductGalleryFiles, setProcessingProductGalleryFiles] = useState(false)
     const [purchaseQuestions, setPurchaseQuestions] = useState<Array<{ q: string; a: string }>>(() => {
         try {
             const raw = product?.purchaseQuestions
@@ -41,12 +50,15 @@ export default function ProductForm({ product, categories = [] }: { product?: an
     const { t } = useI18n()
     const usingUploadedProductImage = productImageValue.startsWith('data:')
     const productImageInputValue = usingUploadedProductImage ? '' : productImageValue
+    const hasRoomForMoreGalleryImages = productGalleryValues.length < PRODUCT_GALLERY_MAX_ITEMS - 1
 
     useEffect(() => {
         setCurrentProduct(product)
         setShowWarning(Boolean(product?.purchaseWarning && String(product.purchaseWarning).trim()))
         setVisibilityLevel(String(product?.visibilityLevel ?? -1))
         setProductImageValue(product?.image || '')
+        setProductGalleryValues(parseStoredProductImages(product?.productImages))
+        setGalleryImageInputValue('')
         try {
             const raw = product?.purchaseQuestions
             if (raw) {
@@ -80,6 +92,8 @@ export default function ProductForm({ product, categories = [] }: { product?: an
                     setShowWarning(Boolean(latest?.purchaseWarning && String(latest.purchaseWarning).trim()))
                     setVisibilityLevel(String(latest?.visibilityLevel ?? -1))
                     setProductImageValue(latest?.image || '')
+                    setProductGalleryValues(parseStoredProductImages((latest as any)?.productImages))
+                    setGalleryImageInputValue('')
                     try {
                         const raw = (latest as any)?.purchaseQuestions
                         if (raw) {
@@ -147,6 +161,73 @@ export default function ProductForm({ product, categories = [] }: { product?: an
             toast.error(t('admin.productForm.imageFileInvalid'))
         } finally {
             setProcessingProductImageFile(false)
+        }
+    }
+
+    const handleAddGalleryImage = () => {
+        const nextImage = galleryImageInputValue.trim()
+        if (!nextImage) return
+        setProductGalleryValues((prev) => normalizeProductImageRefs([...prev, nextImage]).slice(0, PRODUCT_GALLERY_MAX_ITEMS - 1))
+        setGalleryImageInputValue('')
+    }
+
+    const handlePromoteGalleryImage = (index: number) => {
+        const nextPrimary = productGalleryValues[index]
+        if (!nextPrimary) return
+        const currentPrimary = productImageValue.trim()
+
+        setProductImageValue(nextPrimary)
+        setProductGalleryValues((prev) => {
+            const remaining = prev.filter((_, i) => i !== index)
+            return normalizeProductImageRefs(currentPrimary ? [currentPrimary, ...remaining] : remaining)
+        })
+    }
+
+    const handleRemoveGalleryImage = (index: number) => {
+        setProductGalleryValues((prev) => prev.filter((_, i) => i !== index))
+    }
+
+    const handleSelectProductGalleryFiles = async (event: ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(event.target.files || [])
+        event.target.value = ''
+        if (!files.length) return
+
+        setProcessingProductGalleryFiles(true)
+        try {
+            const preparedImages: string[] = []
+            let compressedCount = 0
+
+            for (const file of files) {
+                const prepared = await prepareUploadedImage(file, {
+                    maxBytes: PRODUCT_IMAGE_UPLOAD_MAX_BYTES,
+                    maxDimension: 1600,
+                })
+                preparedImages.push(prepared.dataUrl)
+                if (prepared.wasCompressed) compressedCount += 1
+            }
+
+            setProductGalleryValues((prev) =>
+                normalizeProductImageRefs([...prev, ...preparedImages]).slice(0, PRODUCT_GALLERY_MAX_ITEMS - 1)
+            )
+
+            toast.success(
+                compressedCount > 0
+                    ? t('admin.productForm.galleryFileCompressed')
+                    : t('admin.productForm.galleryFileReady')
+            )
+        } catch (error) {
+            const message = error instanceof Error ? error.message : ''
+            if (message === 'image_compression_unsupported') {
+                toast.error(t('admin.productForm.imageFileCompressionUnsupported'))
+                return
+            }
+            if (message === 'image_compression_failed') {
+                toast.error(t('admin.productForm.imageFileCompressionFailed'))
+                return
+            }
+            toast.error(t('admin.productForm.imageFileInvalid'))
+        } finally {
+            setProcessingProductGalleryFiles(false)
         }
     }
 
@@ -407,6 +488,72 @@ export default function ProductForm({ product, categories = [] }: { product?: an
                                 <img src={productImageValue} alt={currentProduct?.name || 'Product preview'} className="h-14 w-14 rounded object-contain" />
                                 <span className="text-sm text-muted-foreground">{t('admin.productForm.imagePreview')}</span>
                             </div>
+                        )}
+                    </div>
+
+                    <div className="grid gap-3">
+                        <Label htmlFor="galleryImageInput">{t('admin.productForm.galleryLabel')}</Label>
+                        <input type="hidden" name="productImages" value={JSON.stringify(productGalleryValues)} />
+                        <div className="flex gap-2">
+                            <Input
+                                id="galleryImageInput"
+                                value={galleryImageInputValue}
+                                onChange={(e) => setGalleryImageInputValue(e.target.value)}
+                                placeholder={t('admin.productForm.galleryPlaceholder')}
+                                disabled={!hasRoomForMoreGalleryImages}
+                            />
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={handleAddGalleryImage}
+                                disabled={!galleryImageInputValue.trim() || !hasRoomForMoreGalleryImages}
+                            >
+                                {t('admin.productForm.galleryAdd')}
+                            </Button>
+                        </div>
+                        <div className="flex flex-col gap-2 rounded-lg border border-dashed border-border/60 bg-muted/20 p-3">
+                            <Label htmlFor="product-gallery-file" className="text-sm font-medium">{t('admin.productForm.galleryUpload')}</Label>
+                            <input
+                                ref={productGalleryFileInputRef}
+                                id="product-gallery-file"
+                                type="file"
+                                className="hidden"
+                                accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/x-icon,image/bmp,.png,.jpg,.jpeg,.webp,.gif,.svg,.ico,.bmp"
+                                multiple
+                                onChange={handleSelectProductGalleryFiles}
+                                disabled={processingProductGalleryFiles || !hasRoomForMoreGalleryImages}
+                            />
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="w-fit"
+                                onClick={() => productGalleryFileInputRef.current?.click()}
+                                disabled={processingProductGalleryFiles || !hasRoomForMoreGalleryImages}
+                            >
+                                {processingProductGalleryFiles ? t('common.processing') : t('admin.productForm.galleryUpload')}
+                            </Button>
+                            <p className="text-xs text-muted-foreground">{t('admin.productForm.galleryUploadHint', { count: PRODUCT_GALLERY_MAX_ITEMS - 1 })}</p>
+                        </div>
+                        {productGalleryValues.length > 0 ? (
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                {productGalleryValues.map((image, index) => (
+                                    <div key={`${image}-${index}`} className="rounded-lg border bg-muted/30 p-3">
+                                        <div className="mb-3 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-md bg-background">
+                                            <img src={image} alt={`${currentProduct?.name || 'Product'} gallery ${index + 1}`} className="h-full w-full object-contain" />
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <Button type="button" size="sm" variant="outline" onClick={() => handlePromoteGalleryImage(index)}>
+                                                {t('admin.productForm.gallerySetCover')}
+                                            </Button>
+                                            <Button type="button" size="sm" variant="ghost" onClick={() => handleRemoveGalleryImage(index)}>
+                                                {t('admin.productForm.galleryRemove')}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="text-xs text-muted-foreground">{t('admin.productForm.galleryEmpty')}</p>
                         )}
                     </div>
 

@@ -264,8 +264,8 @@ export function ProfileContent({ user, points, checkinEnabled, orderStats, notif
             {/* Messages: Inbox + Sent + Compose */}
             <Card>
                 <CardHeader className="pb-2">
-                    <CardTitle className="text-base flex items-center justify-between">
-                        <div className="flex items-center gap-1">
+                    <CardTitle className="flex min-w-0 flex-col gap-3 text-base sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex min-w-0 flex-wrap items-center gap-1">
                             <Button
                                 variant={msgTab === 'inbox' ? 'default' : 'ghost'}
                                 size="sm"
@@ -293,7 +293,7 @@ export function ProfileContent({ user, points, checkinEnabled, orderStats, notif
                                 )}
                             </Button>
                         </div>
-                        <div className="flex items-center gap-1">
+                        <div className="flex min-w-0 flex-wrap items-center gap-1 sm:justify-end">
                             {msgTab === 'inbox' && notifications.length > 0 && (
                                 <>
                                     <Button
@@ -380,7 +380,7 @@ export function ProfileContent({ user, points, checkinEnabled, orderStats, notif
                             <Button
                                 variant={showComposeForm ? 'secondary' : 'outline'}
                                 size="sm"
-                                className="gap-1.5 h-7"
+                                className="h-7 gap-1.5"
                                 onClick={() => setShowComposeForm(!showComposeForm)}
                             >
                                 <MessageSquarePlus className="h-3.5 w-3.5" />

@@ -92,19 +92,23 @@ async function RootLayoutContent({
 }>) {
   let themeColor: string | null = null;
   let themeFont: string | null = null;
+  let currencyUnit: string | null = null;
   let initialLocale: Locale = "en";
   try {
-    const [resolvedThemeColor, resolvedThemeFont, resolvedLocale] = await Promise.all([
+    const [resolvedThemeColor, resolvedThemeFont, resolvedCurrencyUnit, resolvedLocale] = await Promise.all([
       getSetting("theme_color"),
       getSetting("theme_font"),
+      getSetting("currency_unit"),
       detectServerLocale(),
     ]);
     themeColor = resolvedThemeColor;
     themeFont = resolvedThemeFont;
+    currencyUnit = resolvedCurrencyUnit;
     initialLocale = resolvedLocale;
   } catch {
     themeColor = null;
     themeFont = null;
+    currencyUnit = null;
     initialLocale = "en";
   }
   const themeHue = THEME_HUES[themeColor || "purple"] || 270;
@@ -143,7 +147,7 @@ async function RootLayoutContent({
         />
       </head>
       <body className={cn("min-h-screen bg-background font-sans antialiased")}>
-        <Providers themeColor={themeColor} initialLocale={initialLocale}>
+        <Providers themeColor={themeColor} initialLocale={initialLocale} currencyUnit={currencyUnit}>
           <div className="relative flex min-h-screen flex-col">
             <SiteHeader />
             <div className="flex-1 pb-16 md:pb-0">{children}</div>

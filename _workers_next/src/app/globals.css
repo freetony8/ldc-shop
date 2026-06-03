@@ -299,6 +299,20 @@
       linear-gradient(oklch(0.6 0.1 270 / 0.05) 1px, transparent 1px),
       linear-gradient(90deg, oklch(0.6 0.1 270 / 0.05) 1px, transparent 1px);
   }
+
+  .product-detail-title {
+    font-family:
+      "Iowan Old Style",
+      "Palatino Linotype",
+      "Noto Serif SC",
+      "Noto Serif CJK SC",
+      "Source Han Serif SC",
+      "Songti SC",
+      "STSong",
+      serif;
+    font-kerning: normal;
+    text-rendering: optimizeLegibility;
+  }
 }
 
 /* ======================================

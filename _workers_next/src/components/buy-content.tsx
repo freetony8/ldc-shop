@@ -19,13 +19,14 @@ import {
     DialogTrigger
 } from "@/components/ui/dialog"
 import ReactMarkdown from 'react-markdown'
-import { Loader2, Minus, Plus, Share2 } from "lucide-react"
+import { ChevronLeft, ChevronRight, Expand, Loader2, Minus, Plus, Share2 } from "lucide-react"
 import { ProductImagePlaceholder } from "@/components/product-image-placeholder"
 import { toast } from "sonner"
 import Image from "next/image"
 import { INFINITE_STOCK } from "@/lib/constants"
 import { getBuyPageMeta } from "@/actions/buy"
 import type { ProductVariantRow } from "@/lib/db/queries"
+import { buildProductImageGallery } from "@/lib/product-images"
 
 interface Product {
     id: string
@@ -34,6 +35,7 @@ interface Product {
     price: string
     compareAtPrice?: string | null
     image: string | null
+    productImages?: string | null
     category: string | null
     purchaseLimit?: number | null
     purchaseWarning?: string | null
@@ -49,6 +51,13 @@ interface Review {
     rating: number
     comment: string | null
     createdAt: Date | string | null
+    replies?: Array<{
+        id: number
+        username: string
+        userId?: string | null
+        comment: string
+        createdAt: Date | string | null
+    }>
 }
 
 interface BuyContentProps {
@@ -80,6 +89,8 @@ export function BuyContent({
 }: BuyContentProps) {
     const { t } = useI18n()
     const [selectedVariantId, setSelectedVariantId] = useState<string>(product.id)
+    const [selectedGalleryImage, setSelectedGalleryImage] = useState<string | null>(null)
+    const [isGalleryDialogOpen, setIsGalleryDialogOpen] = useState(false)
     const [shareUrl, setShareUrl] = useState('')
     const [quantity, setQuantity] = useState(1)
     const [showWarningDialog, setShowWarningDialog] = useState(false)
@@ -108,6 +119,7 @@ export function BuyContent({
                     price: v.price,
                     compareAtPrice: v.compareAtPrice,
                     image: v.image,
+                    productImages: v.productImages,
                     category: product.category,
                     purchaseLimit: v.purchaseLimit,
                     purchaseWarning: v.purchaseWarning ?? null,
@@ -159,6 +171,11 @@ export function BuyContent({
         return []
     }, [displayProduct.purchaseQuestions])
 
+    const galleryImages = useMemo(
+        () => buildProductImageGallery(displayProduct.image, displayProduct.productImages ?? null),
+        [displayProduct.image, displayProduct.productImages]
+    )
+
     useEffect(() => {
         setQuestionAnswers(questions.map(() => ''))
         setQuestionsVerified(false)
@@ -191,6 +208,10 @@ export function BuyContent({
     useEffect(() => {
         setSelectedVariantId(product.id)
     }, [product.id])
+
+    useEffect(() => {
+        setSelectedGalleryImage(galleryImages[0] ?? null)
+    }, [displayProduct.id, displayProduct.image, displayProduct.productImages])
 
     useEffect(() => {
         let cancelled = false
@@ -262,6 +283,98 @@ export function BuyContent({
         ? `${t('common.stock')}: ${t('common.unlimited')}`
         : (displayStock > 0 ? `${t('common.stock')}: ${displayStock}` : t('common.outOfStock'))
     const showReviewSummary = !metaLoading && reviewCountState > 0
+    const activeGalleryImage = selectedGalleryImage && galleryImages.includes(selectedGalleryImage)
+        ? selectedGalleryImage
+        : galleryImages[0] ?? null
+    const activeGalleryIndex = activeGalleryImage ? galleryImages.indexOf(activeGalleryImage) : -1
+    const canSwitchGallery = galleryImages.length > 1 && activeGalleryIndex >= 0
+
+    const showPreviousGalleryImage = () => {
+        if (!canSwitchGallery) return
+        const nextIndex = activeGalleryIndex === 0 ? galleryImages.length - 1 : activeGalleryIndex - 1
+        setSelectedGalleryImage(galleryImages[nextIndex] ?? null)
+    }
+
+    const showNextGalleryImage = () => {
+        if (!canSwitchGallery) return
+        const nextIndex = activeGalleryIndex === galleryImages.length - 1 ? 0 : activeGalleryIndex + 1
+        setSelectedGalleryImage(galleryImages[nextIndex] ?? null)
+    }
+
+    const showInlineShareAction = isLoggedIn && hasStock && !needsQuestionVerification
+
+    const renderShareButton = (inline = false) => (
+        <Dialog>
+            <DialogTrigger asChild>
+                <Button
+                    type="button"
+                    variant="outline"
+                    className={
+                        inline
+                            ? "h-11 w-11 shrink-0 rounded-full border-border/45 bg-background/62 p-0 text-muted-foreground transition-colors hover:border-border hover:bg-muted/45 hover:text-foreground"
+                            : "h-10 w-10 rounded-full border-border/40 bg-background/58 p-0 text-muted-foreground transition-colors hover:border-border hover:bg-muted/45 hover:text-foreground"
+                    }
+                    aria-label={t('buy.share')}
+                    title={t('buy.share')}
+                >
+                    <Share2 className={inline ? "h-4 w-4 opacity-75" : "h-4 w-4 opacity-70"} />
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="rounded-2xl sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>{t('buy.shareTitle')}</DialogTitle>
+                    <DialogDescription>{t('buy.shareDescription')}</DialogDescription>
+                </DialogHeader>
+                <div className="grid grid-cols-2 gap-2">
+                    {shareLinks?.x ? (
+                        <Button asChild variant="outline" className="rounded-xl">
+                            <a href={shareLinks.x} target="_blank" rel="noopener noreferrer">X (Twitter)</a>
+                        </Button>
+                    ) : (
+                        <Button variant="outline" className="rounded-xl" disabled>X (Twitter)</Button>
+                    )}
+                    {shareLinks?.facebook ? (
+                        <Button asChild variant="outline" className="rounded-xl">
+                            <a href={shareLinks.facebook} target="_blank" rel="noopener noreferrer">Facebook</a>
+                        </Button>
+                    ) : (
+                        <Button variant="outline" className="rounded-xl" disabled>Facebook</Button>
+                    )}
+                    {shareLinks?.telegram ? (
+                        <Button asChild variant="outline" className="rounded-xl">
+                            <a href={shareLinks.telegram} target="_blank" rel="noopener noreferrer">Telegram</a>
+                        </Button>
+                    ) : (
+                        <Button variant="outline" className="rounded-xl" disabled>Telegram</Button>
+                    )}
+                    {shareLinks?.whatsapp ? (
+                        <Button asChild variant="outline" className="rounded-xl">
+                            <a href={shareLinks.whatsapp} target="_blank" rel="noopener noreferrer">WhatsApp</a>
+                        </Button>
+                    ) : (
+                        <Button variant="outline" className="rounded-xl" disabled>WhatsApp</Button>
+                    )}
+                    {shareLinks?.line ? (
+                        <Button asChild variant="outline" className="rounded-xl col-span-2">
+                            <a href={shareLinks.line} target="_blank" rel="noopener noreferrer">Line</a>
+                        </Button>
+                    ) : (
+                        <Button variant="outline" className="rounded-xl col-span-2" disabled>Line</Button>
+                    )}
+                </div>
+                <Button
+                    type="button"
+                    variant="secondary"
+                    className="rounded-xl"
+                    onClick={handleCopyLink}
+                    disabled={!shareUrl}
+                >
+                    {t('buy.shareCopy')}
+                </Button>
+            </DialogContent>
+        </Dialog>
+    )
+
     return (
         <main className="container relative py-8 md:py-16">
             <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
@@ -276,44 +389,82 @@ export function BuyContent({
                     <div className="space-y-6">
                         <div className="relative overflow-hidden rounded-[2rem] border border-border/40 bg-gradient-to-br from-card via-card/96 to-primary/5 shadow-[0_30px_90px_-48px_rgba(15,23,42,0.32)]">
                             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.78),_transparent_32%)] dark:bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.08),_transparent_36%)]" />
-                            <div className="relative">
-                                <div className="grid gap-0 lg:grid-cols-[minmax(0,0.98fr)_minmax(0,1.02fr)]">
-                                    <div className="relative border-b border-border/20 p-5 md:p-6 lg:border-b-0 lg:border-r">
-                                        <div className="relative flex h-full min-h-[18rem] items-center justify-center overflow-hidden rounded-[1.65rem] bg-card/50 p-5 md:min-h-[22rem] md:p-8">
-                                            {displayProduct.image ? (
-                                                <div className="relative aspect-[4/3] w-full max-w-[32rem]">
-                                                    <Image
-                                                        src={displayProduct.image}
-                                                        alt={displayProduct.name}
-                                                        fill
-                                                        sizes="(max-width: 1024px) 100vw, 56vw"
-                                                        className="object-contain"
-                                                    />
+                            <div className="relative space-y-6 p-5 md:space-y-8 md:p-6 lg:p-8">
+                                <div className="relative overflow-hidden rounded-[1.8rem] border border-border/20 bg-card/48 p-3 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.35)] md:p-4">
+                                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.25),_transparent_48%)] dark:bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.08),_transparent_52%)]" />
+                                    <div className="relative flex aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-[1.45rem] bg-card/72">
+                                        {activeGalleryImage ? (
+                                            <button
+                                                type="button"
+                                                className="group relative h-full w-full cursor-zoom-in text-left"
+                                                onClick={() => setIsGalleryDialogOpen(true)}
+                                                aria-label={t('buy.viewLargeImage')}
+                                                title={t('buy.viewLargeImage')}
+                                            >
+                                                <Image
+                                                    src={activeGalleryImage}
+                                                    alt={displayProduct.name}
+                                                    fill
+                                                    sizes="(max-width: 1024px) 100vw, 60vw"
+                                                    className="object-contain"
+                                                    draggable={false}
+                                                />
+                                                <div className="absolute bottom-3 right-3 inline-flex h-7 w-7 items-center justify-center rounded-full border border-border/15 bg-background/56 text-muted-foreground/70 shadow-sm backdrop-blur-sm transition-colors group-hover:text-foreground/75">
+                                                    <Expand className="h-3.5 w-3.5" />
                                                 </div>
-                                            ) : (
-                                                <div className="flex h-full items-center justify-center">
-                                                    <ProductImagePlaceholder productId={displayProduct.id} productName={displayProduct.name} size="md" />
+                                            </button>
+                                        ) : (
+                                            <div className="flex h-full items-center justify-center">
+                                                <ProductImagePlaceholder productId={displayProduct.id} productName={displayProduct.name} size="md" fill />
+                                            </div>
+                                        )}
+                                        {canSwitchGallery && (
+                                            <>
+                                                <Button
+                                                    type="button"
+                                                    variant="secondary"
+                                                    size="icon"
+                                                    className="absolute left-3 top-1/2 h-10 w-10 -translate-y-1/2 rounded-full border border-border/35 bg-background/85 shadow-lg backdrop-blur hover:bg-background"
+                                                    onClick={showPreviousGalleryImage}
+                                                    aria-label="Previous image"
+                                                >
+                                                    <ChevronLeft className="h-5 w-5" />
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    variant="secondary"
+                                                    size="icon"
+                                                    className="absolute right-3 top-1/2 h-10 w-10 -translate-y-1/2 rounded-full border border-border/35 bg-background/85 shadow-lg backdrop-blur hover:bg-background"
+                                                    onClick={showNextGalleryImage}
+                                                    aria-label="Next image"
+                                                >
+                                                    <ChevronRight className="h-5 w-5" />
+                                                </Button>
+                                                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-border/25 bg-background/78 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur">
+                                                    {activeGalleryIndex + 1} / {galleryImages.length}
                                                 </div>
-                                            )}
-                                        </div>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-5">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        {displayProduct.category && displayProduct.category !== 'general' && (
+                                            <Badge variant="secondary" className="rounded-full border border-border/45 bg-background/70 px-3 py-1 capitalize">
+                                                {displayProduct.category}
+                                            </Badge>
+                                        )}
+                                        {displayProduct.isHot && (
+                                            <Badge className="rounded-full border-0 bg-orange-500 px-3 py-1 text-white shadow-lg shadow-orange-500/20">
+                                                {t('buy.hot')}
+                                            </Badge>
+                                        )}
                                     </div>
 
-                                    <div className="relative flex flex-col justify-center p-6 md:p-8">
-                                        <div className="mb-4 flex flex-wrap items-center gap-2">
-                                            {displayProduct.category && displayProduct.category !== 'general' && (
-                                                <Badge variant="secondary" className="rounded-full border border-border/45 bg-background/70 px-3 py-1 capitalize">
-                                                    {displayProduct.category}
-                                                </Badge>
-                                            )}
-                                            {displayProduct.isHot && (
-                                                <Badge className="rounded-full border-0 bg-orange-500 px-3 py-1 text-white shadow-lg shadow-orange-500/20">
-                                                    {t('buy.hot')}
-                                                </Badge>
-                                            )}
-                                        </div>
-
-                                        <div className="space-y-4">
-                                            <h1 className="text-xl font-semibold tracking-tight text-foreground md:text-2xl">
+                                    <div className="rounded-[1.4rem] border border-border/15 bg-background/52 px-5 py-4 shadow-[0_16px_40px_-42px_rgba(15,23,42,0.28)] md:px-6 md:py-5">
+                                        <div className="space-y-3.5">
+                                            <h1 className="product-detail-title max-w-3xl text-[1.14rem] font-semibold leading-[1.34] tracking-[-0.015em] text-foreground/96 [text-wrap:balance] md:text-[1.38rem]">
                                                 {displayProduct.name}
                                             </h1>
 
@@ -323,7 +474,7 @@ export function BuyContent({
                                                     <span>{t('common.loading')}</span>
                                                 </div>
                                             ) : showReviewSummary ? (
-                                                <div className="flex w-fit flex-wrap items-center gap-3 rounded-full border border-border/45 bg-background/72 px-4 py-2 text-sm text-muted-foreground">
+                                                <div className="flex w-fit flex-wrap items-center gap-3 rounded-full border border-border/35 bg-card/72 px-3.5 py-1.5 text-sm text-muted-foreground">
                                                     <StarRating rating={Math.round(averageRatingState)} size="sm" />
                                                     <span className="font-medium text-foreground">{averageRatingState.toFixed(1)}</span>
                                                     <span>{reviewCountState} {t('review.title')}</span>
@@ -331,13 +482,13 @@ export function BuyContent({
                                             ) : null}
                                         </div>
                                     </div>
-                                </div>
 
-                                <div className="border-t border-border/20 p-6 md:p-8">
-                                    <div className="prose prose-sm max-w-none break-words text-foreground/88 dark:prose-invert md:prose-base">
-                                        <ReactMarkdown>
-                                            {displayProduct.description || t('buy.noDescription')}
-                                        </ReactMarkdown>
+                                    <div className="rounded-[1.55rem] border border-border/20 bg-background/55 p-5 md:p-6">
+                                        <div className="prose prose-sm max-w-none break-words text-foreground/88 dark:prose-invert md:prose-base">
+                                            <ReactMarkdown>
+                                                {displayProduct.description || t('buy.noDescription')}
+                                            </ReactMarkdown>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -517,59 +668,66 @@ export function BuyContent({
                                             </div>
                                         ) : hasStock ? (
                                             displayProduct.purchaseWarning && !warningConfirmed ? (
-                                                <Dialog open={showWarningDialog} onOpenChange={setShowWarningDialog}>
-                                                    <DialogTrigger asChild>
-                                                        <Button
-                                                            size="lg"
-                                                            className="h-12 w-full rounded-xl bg-primary px-6 font-medium text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/25 active:scale-[0.99]"
-                                                        >
-                                                            {t('common.buyNow')}
-                                                        </Button>
-                                                    </DialogTrigger>
-                                                    <DialogContent className="rounded-2xl sm:max-w-md">
-                                                        <DialogHeader>
-                                                            <DialogTitle className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
-                                                                <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                                                </svg>
-                                                                {t('buy.warningTitle')}
-                                                            </DialogTitle>
-                                                        </DialogHeader>
-                                                        <div className="py-4 text-sm leading-relaxed text-muted-foreground">
-                                                            <div className="prose prose-sm max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-                                                                <ReactMarkdown>{displayProduct.purchaseWarning || ''}</ReactMarkdown>
+                                                <div className="flex items-center gap-2">
+                                                    <Dialog open={showWarningDialog} onOpenChange={setShowWarningDialog}>
+                                                        <DialogTrigger asChild>
+                                                            <Button
+                                                                size="lg"
+                                                                className="h-11 flex-1 rounded-full bg-primary px-5 font-medium text-primary-foreground shadow-[0_16px_34px_-20px_rgba(15,23,42,0.55)] transition-all hover:bg-primary/90 hover:shadow-[0_18px_40px_-22px_rgba(15,23,42,0.6)] active:scale-[0.99]"
+                                                            >
+                                                                {t('common.buyNow')}
+                                                            </Button>
+                                                        </DialogTrigger>
+                                                        <DialogContent className="rounded-2xl sm:max-w-md">
+                                                            <DialogHeader>
+                                                                <DialogTitle className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                                                                    <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                                    </svg>
+                                                                    {t('buy.warningTitle')}
+                                                                </DialogTitle>
+                                                            </DialogHeader>
+                                                            <div className="py-4 text-sm leading-relaxed text-muted-foreground">
+                                                                <div className="prose prose-sm max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                                                                    <ReactMarkdown>{displayProduct.purchaseWarning || ''}</ReactMarkdown>
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                        <div className="flex justify-end gap-3">
-                                                            <Button
-                                                                variant="outline"
-                                                                className="rounded-xl"
-                                                                onClick={() => setShowWarningDialog(false)}
-                                                            >
-                                                                {t('common.cancel')}
-                                                            </Button>
-                                                            <Button
-                                                                onClick={() => {
-                                                                    setWarningConfirmed(true)
-                                                                    setShowWarningDialog(false)
-                                                                }}
-                                                                className="rounded-xl bg-primary font-medium text-primary-foreground hover:bg-primary/90"
-                                                            >
-                                                                {t('buy.confirmWarning')}
-                                                            </Button>
-                                                        </div>
-                                                    </DialogContent>
-                                                </Dialog>
+                                                            <div className="flex justify-end gap-3">
+                                                                <Button
+                                                                    variant="outline"
+                                                                    className="rounded-xl"
+                                                                    onClick={() => setShowWarningDialog(false)}
+                                                                >
+                                                                    {t('common.cancel')}
+                                                                </Button>
+                                                                <Button
+                                                                    onClick={() => {
+                                                                        setWarningConfirmed(true)
+                                                                        setShowWarningDialog(false)
+                                                                    }}
+                                                                    className="rounded-xl bg-primary font-medium text-primary-foreground hover:bg-primary/90"
+                                                                >
+                                                                    {t('buy.confirmWarning')}
+                                                                </Button>
+                                                            </div>
+                                                        </DialogContent>
+                                                    </Dialog>
+                                                    {renderShareButton(true)}
+                                                </div>
                                             ) : (
-                                                <BuyButton
-                                                    productId={displayProduct.id}
-                                                    price={displayProduct.price}
-                                                    productName={displayProduct.name}
-                                                    quantity={quantity}
-                                                    autoOpen={warningConfirmed && !!displayProduct.purchaseWarning}
-                                                    emailConfigured={emailConfiguredState}
-                                                    answers={hasQuestions ? questionAnswers : undefined}
-                                                />
+                                                <div className="flex items-center gap-2">
+                                                    <BuyButton
+                                                        productId={displayProduct.id}
+                                                        price={displayProduct.price}
+                                                        productName={displayProduct.name}
+                                                        quantity={quantity}
+                                                        autoOpen={warningConfirmed && !!displayProduct.purchaseWarning}
+                                                        emailConfigured={emailConfiguredState}
+                                                        answers={hasQuestions ? questionAnswers : undefined}
+                                                        className="h-11 flex-1 rounded-full bg-primary px-5 font-medium text-primary-foreground shadow-[0_16px_34px_-20px_rgba(15,23,42,0.55)] transition-all hover:bg-primary/90 hover:shadow-[0_18px_40px_-22px_rgba(15,23,42,0.6)]"
+                                                    />
+                                                    {renderShareButton(true)}
+                                                </div>
                                             )
                                         ) : displayLocked > 0 ? (
                                             <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-4 text-amber-800 dark:text-amber-200">
@@ -604,70 +762,11 @@ export function BuyContent({
                                     )}
                                 </div>
 
-                                <Dialog>
-                                    <DialogTrigger asChild>
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            className="h-11 w-full rounded-xl border-border/50 bg-background/50 font-medium transition-colors hover:bg-muted/50 hover:border-border"
-                                        >
-                                            <Share2 className="mr-2 h-4 w-4 opacity-70" />
-                                            {t('buy.share')}
-                                        </Button>
-                                    </DialogTrigger>
-                                        <DialogContent className="rounded-2xl sm:max-w-md">
-                                            <DialogHeader>
-                                                <DialogTitle>{t('buy.shareTitle')}</DialogTitle>
-                                                <DialogDescription>{t('buy.shareDescription')}</DialogDescription>
-                                            </DialogHeader>
-                                            <div className="grid grid-cols-2 gap-2">
-                                                {shareLinks?.x ? (
-                                                    <Button asChild variant="outline" className="rounded-xl">
-                                                        <a href={shareLinks.x} target="_blank" rel="noopener noreferrer">X (Twitter)</a>
-                                                    </Button>
-                                                ) : (
-                                                    <Button variant="outline" className="rounded-xl" disabled>X (Twitter)</Button>
-                                                )}
-                                                {shareLinks?.facebook ? (
-                                                    <Button asChild variant="outline" className="rounded-xl">
-                                                        <a href={shareLinks.facebook} target="_blank" rel="noopener noreferrer">Facebook</a>
-                                                    </Button>
-                                                ) : (
-                                                    <Button variant="outline" className="rounded-xl" disabled>Facebook</Button>
-                                                )}
-                                                {shareLinks?.telegram ? (
-                                                    <Button asChild variant="outline" className="rounded-xl">
-                                                        <a href={shareLinks.telegram} target="_blank" rel="noopener noreferrer">Telegram</a>
-                                                    </Button>
-                                                ) : (
-                                                    <Button variant="outline" className="rounded-xl" disabled>Telegram</Button>
-                                                )}
-                                                {shareLinks?.whatsapp ? (
-                                                    <Button asChild variant="outline" className="rounded-xl">
-                                                        <a href={shareLinks.whatsapp} target="_blank" rel="noopener noreferrer">WhatsApp</a>
-                                                    </Button>
-                                                ) : (
-                                                    <Button variant="outline" className="rounded-xl" disabled>WhatsApp</Button>
-                                                )}
-                                                {shareLinks?.line ? (
-                                                    <Button asChild variant="outline" className="rounded-xl col-span-2">
-                                                        <a href={shareLinks.line} target="_blank" rel="noopener noreferrer">Line</a>
-                                                    </Button>
-                                                ) : (
-                                                    <Button variant="outline" className="rounded-xl col-span-2" disabled>Line</Button>
-                                                )}
-                                            </div>
-                                            <Button
-                                                type="button"
-                                                variant="secondary"
-                                                className="rounded-xl"
-                                                onClick={handleCopyLink}
-                                                disabled={!shareUrl}
-                                            >
-                                                {t('buy.shareCopy')}
-                                            </Button>
-                                        </DialogContent>
-                                </Dialog>
+                                {!showInlineShareAction && (
+                                    <div className="flex justify-end">
+                                        {renderShareButton(false)}
+                                    </div>
+                                )}
 
                                 <div className="rounded-xl border border-border/20 bg-muted/10 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
                                     {t('buy.paymentTimeoutNotice')}
@@ -704,11 +803,64 @@ export function BuyContent({
                                 reviews={reviewsState}
                                 averageRating={averageRatingState}
                                 totalCount={reviewCountState}
+                                productId={displayProduct.id}
+                                isLoggedIn={isLoggedIn}
+                                onReplySubmitted={() => setMetaRefreshSeq((prev) => prev + 1)}
                             />
                         )}
                     </CardContent>
                 </Card>
             </div>
+
+            <Dialog open={isGalleryDialogOpen} onOpenChange={setIsGalleryDialogOpen}>
+                <DialogContent className="max-w-5xl border-border/40 bg-background/96 p-3 sm:p-4">
+                    <DialogHeader className="sr-only">
+                        <DialogTitle>{displayProduct.name}</DialogTitle>
+                        <DialogDescription>{t('buy.shareDescription')}</DialogDescription>
+                    </DialogHeader>
+                    <div className="relative flex min-h-[60vh] items-center justify-center overflow-hidden rounded-2xl bg-muted/20 p-4 md:min-h-[72vh]">
+                        {activeGalleryImage ? (
+                            <div className="relative h-[60vh] w-full md:h-[72vh]">
+                                <Image
+                                    src={activeGalleryImage}
+                                    alt={displayProduct.name}
+                                    fill
+                                    sizes="90vw"
+                                    className="object-contain"
+                                    draggable={false}
+                                />
+                            </div>
+                        ) : null}
+                        {canSwitchGallery && (
+                            <>
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="icon"
+                                    className="absolute left-3 top-1/2 h-11 w-11 -translate-y-1/2 rounded-full border border-border/40 bg-background/90 shadow-lg"
+                                    onClick={showPreviousGalleryImage}
+                                    aria-label="Previous image"
+                                >
+                                    <ChevronLeft className="h-5 w-5" />
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="icon"
+                                    className="absolute right-3 top-1/2 h-11 w-11 -translate-y-1/2 rounded-full border border-border/40 bg-background/90 shadow-lg"
+                                    onClick={showNextGalleryImage}
+                                    aria-label="Next image"
+                                >
+                                    <ChevronRight className="h-5 w-5" />
+                                </Button>
+                                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-border/30 bg-background/88 px-3 py-1 text-xs font-medium text-muted-foreground">
+                                    {activeGalleryIndex + 1} / {galleryImages.length}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
         </main>
     )
 }

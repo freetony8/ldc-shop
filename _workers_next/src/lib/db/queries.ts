@@ -1,5 +1,5 @@
 import { db } from "./index";
-import { products, cards, orders, settings, reviews, loginUsers, categories, userNotifications, wishlistItems, wishlistVotes } from "./schema";
+import { products, cards, orders, settings, reviews, reviewReplies, loginUsers, categories, userNotifications, wishlistItems, wishlistVotes } from "./schema";
 import { INFINITE_STOCK, RESERVATION_TTL_MS } from "@/lib/constants";
 import { eq, sql, desc, and, asc, gte, or, inArray, lte, lt, isNull } from "drizzle-orm";
 import { updateTag, revalidatePath } from "next/cache";
@@ -9,7 +9,7 @@ import { cache } from "react";
 let dbInitialized = false;
 let loginUsersSchemaReady = false;
 let wishlistTablesReady = false;
-const CURRENT_SCHEMA_VERSION = 19;
+const CURRENT_SCHEMA_VERSION = 20;
 type ColumnEnsureKey = 'products' | 'orders' | 'cards' | 'loginUsers';
 const columnEnsureState: Record<ColumnEnsureKey, { ready: boolean; pending: Promise<void> | null }> = {
     products: { ready: false, pending: null },
@@ -17,6 +17,7 @@ const columnEnsureState: Record<ColumnEnsureKey, { ready: boolean; pending: Prom
     cards: { ready: false, pending: null },
     loginUsers: { ready: false, pending: null },
 };
+const reviewRepliesEnsureState = { ready: false, pending: null as Promise<void> | null };
 
 async function ensureColumnsOnce(key: ColumnEnsureKey, task: () => Promise<void>) {
     const state = columnEnsureState[key];
@@ -70,6 +71,7 @@ async function ensureIndexes() {
         `CREATE INDEX IF NOT EXISTS orders_user_status_created_at_idx ON orders(user_id, status, created_at)`,
         `CREATE INDEX IF NOT EXISTS orders_product_status_idx ON orders(product_id, status)`,
         `CREATE INDEX IF NOT EXISTS reviews_product_created_at_idx ON reviews(product_id, created_at)`,
+        `CREATE INDEX IF NOT EXISTS review_replies_review_created_idx ON review_replies(review_id, created_at)`,
         `CREATE INDEX IF NOT EXISTS refund_requests_order_id_idx ON refund_requests(order_id)`,
         `CREATE INDEX IF NOT EXISTS user_notifications_user_created_idx ON user_notifications(user_id, created_at)`,
         `CREATE INDEX IF NOT EXISTS user_notifications_user_read_idx ON user_notifications(user_id, is_read, created_at)`,
@@ -114,6 +116,39 @@ async function ensureIndexes() {
     }
 }
 
+async function ensureReviewRepliesTable() {
+    if (reviewRepliesEnsureState.ready) return;
+    if (reviewRepliesEnsureState.pending) {
+        await reviewRepliesEnsureState.pending;
+        return;
+    }
+
+    const pending = (async () => {
+        try {
+            await db.run(sql`
+                CREATE TABLE IF NOT EXISTS review_replies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    review_id INTEGER NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+                    user_id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    comment TEXT NOT NULL,
+                    created_at INTEGER DEFAULT (unixepoch() * 1000)
+                )
+            `)
+            reviewRepliesEnsureState.ready = true;
+        } catch {
+            // best effort
+        }
+    })();
+
+    reviewRepliesEnsureState.pending = pending;
+    try {
+        await pending;
+    } finally {
+        reviewRepliesEnsureState.pending = null;
+    }
+}
+
 // Auto-initialize database on first query
 async function ensureDatabaseInitialized() {
     if (dbInitialized) return;
@@ -122,7 +157,11 @@ async function ensureDatabaseInitialized() {
         // OPTIMIZATION: Check schema version first to avoid heavy DDL checks
         try {
             const version = await getSetting('schema_version');
-            if (version === String(CURRENT_SCHEMA_VERSION)) {
+            const parsedVersion = Number.parseInt(String(version || '').trim(), 10);
+            if (
+                version === String(CURRENT_SCHEMA_VERSION) ||
+                (Number.isFinite(parsedVersion) && parsedVersion >= CURRENT_SCHEMA_VERSION)
+            ) {
                 dbInitialized = true;
                 return;
             }
@@ -175,6 +214,7 @@ async function ensureDatabaseInitialized() {
             compare_at_price TEXT,
             category TEXT,
             image TEXT,
+            product_images TEXT,
             is_hot INTEGER DEFAULT 0,
             is_active INTEGER DEFAULT 1,
             is_shared INTEGER DEFAULT 0,
@@ -270,6 +310,15 @@ async function ensureDatabaseInitialized() {
             username TEXT NOT NULL,
             rating INTEGER NOT NULL,
             comment TEXT,
+            created_at INTEGER DEFAULT (unixepoch() * 1000)
+        );
+
+        CREATE TABLE IF NOT EXISTS review_replies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            review_id INTEGER NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+            user_id TEXT NOT NULL,
+            username TEXT NOT NULL,
+            comment TEXT NOT NULL,
             created_at INTEGER DEFAULT (unixepoch() * 1000)
         );
         
@@ -394,6 +443,7 @@ async function ensureProductsColumns() {
         await safeAddColumn('products', 'variant_group_id', 'TEXT');
         await safeAddColumn('products', 'variant_label', 'TEXT');
         await safeAddColumn('products', 'purchase_questions', 'TEXT');
+        await safeAddColumn('products', 'product_images', 'TEXT');
     });
 }
 
@@ -805,6 +855,7 @@ export async function getProducts() {
             price: products.price,
             compareAtPrice: products.compareAtPrice,
             image: products.image,
+            productImages: products.productImages,
             category: products.category,
             isHot: products.isHot,
             isActive: products.isActive,
@@ -847,6 +898,7 @@ export async function getActiveProducts(options?: { isLoggedIn?: boolean; trustL
             price: products.price,
             compareAtPrice: products.compareAtPrice,
             image: products.image,
+            productImages: products.productImages,
             category: products.category,
             isHot: products.isHot,
             isShared: products.isShared,
@@ -1012,6 +1064,7 @@ export async function getProduct(id: string, options?: { isLoggedIn?: boolean; t
             price: products.price,
             compareAtPrice: products.compareAtPrice,
             image: products.image,
+            productImages: products.productImages,
             category: products.category,
             isHot: products.isHot,
             isActive: products.isActive,
@@ -1062,6 +1115,7 @@ export type ProductVariantRow = {
     price: string;
     compareAtPrice: string | null;
     image: string | null;
+    productImages: string | null;
     variantLabel: string | null;
     stock: number;
     locked: number;
@@ -1085,6 +1139,7 @@ export async function getProductVariants(
             price: products.price,
             compareAtPrice: products.compareAtPrice,
             image: products.image,
+            productImages: products.productImages,
             variantLabel: products.variantLabel,
             stock: sql<number>`COALESCE(${products.stockCount}, 0)`,
             locked: sql<number>`COALESCE(${products.lockedCount}, 0)`,
@@ -1128,6 +1183,7 @@ export async function getProductForAdmin(id: string) {
             price: products.price,
             compareAtPrice: products.compareAtPrice,
             image: products.image,
+            productImages: products.productImages,
             category: products.category,
             isHot: products.isHot,
             isActive: products.isActive,
@@ -1504,10 +1560,35 @@ export async function getActiveProductCategories(options?: { isLoggedIn?: boolea
 
 // Reviews
 export async function getProductReviews(productId: string) {
-    return await db.select()
+    await ensureReviewRepliesTable()
+    const reviewRows = await db.select()
         .from(reviews)
         .where(eq(reviews.productId, productId))
         .orderBy(desc(reviews.createdAt));
+
+    if (!reviewRows.length) return reviewRows.map((review) => ({ ...review, replies: [] }));
+
+    try {
+        const replyRows = await db.select()
+            .from(reviewReplies)
+            .where(inArray(reviewReplies.reviewId, reviewRows.map((review) => review.id)))
+            .orderBy(asc(reviewReplies.createdAt));
+
+        const replyMap = new Map<number, typeof replyRows>()
+        for (const reply of replyRows) {
+            const list = replyMap.get(reply.reviewId) ?? []
+            list.push(reply)
+            replyMap.set(reply.reviewId, list)
+        }
+
+        return reviewRows.map((review) => ({
+            ...review,
+            replies: replyMap.get(review.id) ?? [],
+        }));
+    } catch (error: any) {
+        if (!isMissingTableOrColumn(error)) throw error;
+        return reviewRows.map((review) => ({ ...review, replies: [] }));
+    }
 }
 
 export async function getProductRating(productId: string): Promise<{ average: number; count: number }> {
@@ -1570,6 +1651,19 @@ export async function createReview(data: {
     return res;
 }
 
+export async function createReviewReply(data: {
+    reviewId: number;
+    userId: string;
+    username: string;
+    comment: string;
+}) {
+    await ensureReviewRepliesTable()
+    return await db.insert(reviewReplies).values({
+        ...data,
+        createdAt: new Date(),
+    }).returning();
+}
+
 export async function canUserReview(userId: string, productId: string, username?: string): Promise<{ canReview: boolean; orderId?: string }> {
     try {
         const findUnreviewedOrder = async (whereClause: any) => {
@@ -1629,11 +1723,12 @@ export async function hasUserReviewedOrder(orderId: string): Promise<boolean> {
 }
 
 function isMissingTable(error: any) {
-    const errorString = JSON.stringify(error);
+    const errorString = (JSON.stringify(error) + String(error) + (error?.message || '')).toLowerCase();
     return (
         error?.message?.includes('does not exist') ||
         error?.cause?.message?.includes('does not exist') ||
-        errorString.includes('42P01') ||
+        errorString.includes('42p01') ||
+        errorString.includes('no such table') ||
         (errorString.includes('relation') && errorString.includes('does not exist'))
     );
 }
@@ -1658,6 +1753,7 @@ async function migrateTimestampColumnsToMs() {
         { table: 'daily_checkins_v2', columns: ['created_at'] },
         { table: 'settings', columns: ['updated_at'] },
         { table: 'reviews', columns: ['created_at'] },
+        { table: 'review_replies', columns: ['created_at'] },
         { table: 'categories', columns: ['created_at', 'updated_at'] },
         { table: 'refund_requests', columns: ['created_at', 'updated_at', 'processed_at'] },
         { table: 'user_notifications', columns: ['created_at'] },

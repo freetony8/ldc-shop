@@ -22,6 +22,7 @@ export default async function AdminSettingsPage() {
     const shopDescription = settingsMap['shop_description'] || null
     const shopLogo = resolveEffectiveShopLogo(settingsMap['shop_logo'] || '', settingsMap['shop_logo_source'] || '').effectiveLogo || null
     const shopFooter = settingsMap['shop_footer'] || null
+    const currencyUnit = settingsMap['currency_unit'] || null
     const themeColor = settingsMap['theme_color'] || null
     const themeFont = isThemeFont(settingsMap['theme_font'] || '') ? settingsMap['theme_font'] : DEFAULT_THEME_FONT
 
@@ -41,6 +42,7 @@ export default async function AdminSettingsPage() {
             shopDescription={shopDescription}
             shopLogo={shopLogo}
             shopFooter={shopFooter}
+            currencyUnit={currencyUnit}
             themeColor={themeColor}
             themeFont={themeFont}
             visitorCount={visitorCount}

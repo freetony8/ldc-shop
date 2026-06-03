@@ -4,6 +4,7 @@ import { db } from "@/lib/db"
 import {
   orders,
   reviews,
+  reviewReplies,
   settings,
   products,
   cards,
@@ -276,6 +277,7 @@ export async function GET(req: Request) {
         ["cards", () => db.select().from(cards).all()],
         ["orders", () => db.select().from(orders).all()],
         ["reviews", () => db.select().from(reviews).all()],
+        ["review_replies", () => db.select().from(reviewReplies).all()],
         ["settings", () => db.select().from(settings).all()],
         ["login_users", () => db.select().from(loginUsers).all()],
         ["user_notifications", () => db.select().from(userNotifications).all()],
@@ -319,6 +321,7 @@ export async function GET(req: Request) {
           userId: 'user_id',
           productId: 'product_id',
           orderId: 'order_id',
+          reviewId: 'review_id',
           itemId: 'item_id',
           messageId: 'message_id',
           // Products
@@ -337,6 +340,7 @@ export async function GET(req: Request) {
           variantGroupId: 'variant_group_id',
           variantLabel: 'variant_label',
           purchaseQuestions: 'purchase_questions',
+          productImages: 'product_images',
           createdAt: 'created_at',
           // Cards
           cardKey: 'card_key',

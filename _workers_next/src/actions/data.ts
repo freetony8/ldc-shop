@@ -26,6 +26,7 @@ async function repairTimestamps() {
         { table: 'daily_checkins_v2', cols: ['created_at'] },
         { table: 'settings', cols: ['updated_at'] },
         { table: 'reviews', cols: ['created_at'] },
+        { table: 'review_replies', cols: ['created_at'] },
         { table: 'categories', cols: ['created_at', 'updated_at'] },
         { table: 'refund_requests', cols: ['created_at', 'updated_at', 'processed_at'] },
         { table: 'user_notifications', cols: ['created_at'] },
@@ -83,6 +84,7 @@ export async function importData(formData: FormData) {
             userId: 'user_id',
             productId: 'product_id',
             orderId: 'order_id',
+            reviewId: 'review_id',
             itemId: 'item_id',
             messageId: 'message_id',
             // Products
@@ -101,6 +103,7 @@ export async function importData(formData: FormData) {
             variantGroupId: 'variant_group_id',
             variantLabel: 'variant_label',
             purchaseQuestions: 'purchase_questions',
+            productImages: 'product_images',
             createdAt: 'created_at',
             // Cards
             cardKey: 'card_key',

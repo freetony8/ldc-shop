@@ -2,7 +2,7 @@
 
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { products, cards, reviews, categories } from "@/lib/db/schema"
+import { products, cards, reviews, reviewReplies, categories } from "@/lib/db/schema"
 import { eq, sql, inArray, and, or, isNull, lte } from "drizzle-orm"
 import { sendBarkMessage, sendTelegramMessage } from "@/lib/notifications"
 import { revalidatePath, updateTag } from "next/cache"
@@ -11,6 +11,15 @@ import { isAdminUsername } from "@/lib/admin-auth"
 import { getProductCardApiConfig, pullOneCardFromApi, saveProductCardApiConfig } from "@/lib/card-api"
 import { unstable_noStore } from "next/cache"
 import { isThemeFont } from "@/lib/theme-fonts"
+import { normalizeCurrencyUnit } from "@/lib/currency-unit"
+import {
+    PRODUCT_GALLERY_MAX_ITEMS,
+    PRODUCT_GALLERY_MAX_JSON_LENGTH,
+    normalizeProductImageRefs,
+    parseStoredProductImages,
+    splitProductImageGallery,
+    validateProductImageRef,
+} from "@/lib/product-images"
 
 export async function checkAdmin() {
     const session = await auth()
@@ -47,6 +56,7 @@ export async function saveProduct(formData: FormData) {
     const compareAtPrice = (formData.get('compareAtPrice') as string | null) || null
     const category = formData.get('category') as string
     const image = (formData.get('image') as string || '').trim()
+    const productImagesRaw = (formData.get('productImages') as string | null)?.trim() || null
     const purchaseLimit = formData.get('purchaseLimit') ? parseInt(formData.get('purchaseLimit') as string) : null
     const isHot = formData.get('isHot') === 'on'
     const isShared = formData.get('isShared') === 'on'
@@ -72,15 +82,21 @@ export async function saveProduct(formData: FormData) {
     if (![ -1, 0, 1, 2, 3 ].includes(visibilityLevel)) {
         throw new Error("Invalid visibility level")
     }
-    if (image.startsWith('data:')) {
-        if (!image.startsWith('data:image/')) {
-            throw new Error("Only image data URLs are allowed")
-        }
-        if (image.length > 900_000) {
-            throw new Error("Product image is too large")
-        }
-    } else if (image.length > 2000) {
-        throw new Error("Product image URL is too long")
+    const submittedGallery = normalizeProductImageRefs([image, ...parseStoredProductImages(productImagesRaw)])
+    if (submittedGallery.length > PRODUCT_GALLERY_MAX_ITEMS) {
+        throw new Error(`Product gallery supports up to ${PRODUCT_GALLERY_MAX_ITEMS} images`)
+    }
+    for (const [index, galleryImage] of submittedGallery.entries()) {
+        validateProductImageRef(galleryImage, index === 0 ? "Product image" : `Product gallery image ${index}`)
+    }
+
+    const {
+        primaryImage,
+        additionalImagesJson,
+    } = splitProductImageGallery(image, productImagesRaw)
+
+    if (additionalImagesJson && additionalImagesJson.length > PRODUCT_GALLERY_MAX_JSON_LENGTH) {
+        throw new Error("Additional product images are too large")
     }
 
     const doSave = async () => {
@@ -101,7 +117,8 @@ export async function saveProduct(formData: FormData) {
             price,
             compareAtPrice: compareAtPrice && compareAtPrice !== '0' ? compareAtPrice : null,
             category,
-            image,
+            image: primaryImage,
+            productImages: additionalImagesJson,
             purchaseLimit,
             purchaseWarning,
             isHot,
@@ -118,7 +135,8 @@ export async function saveProduct(formData: FormData) {
                 price,
                 compareAtPrice: compareAtPrice && compareAtPrice !== '0' ? compareAtPrice : null,
                 category,
-                image,
+                image: primaryImage,
+                productImages: additionalImagesJson,
                 purchaseLimit,
                 purchaseWarning,
                 isHot,
@@ -147,6 +165,9 @@ export async function saveProduct(formData: FormData) {
         } catch { /* column exists */ }
         try {
             await db.run(sql.raw(`ALTER TABLE products ADD COLUMN visibility_level INTEGER DEFAULT -1`));
+        } catch { /* column exists */ }
+        try {
+            await db.run(sql.raw(`ALTER TABLE products ADD COLUMN product_images TEXT`));
         } catch { /* column exists */ }
     }
 
@@ -600,9 +621,42 @@ export async function saveRefundReclaimCards(enabled: boolean) {
 
 export async function deleteReview(reviewId: number) {
     await checkAdmin()
+    const existing = await db.select({
+        productId: reviews.productId,
+    }).from(reviews).where(eq(reviews.id, reviewId)).limit(1)
+
     await db.delete(reviews).where(eq(reviews.id, reviewId))
+
+    const productId = existing[0]?.productId
+    if (productId) {
+        await recalcProductAggregates(productId)
+        revalidatePath(`/buy/${productId}`)
+    }
+
     revalidatePath('/admin/reviews')
     updateTag('home:ratings')
+    updateTag('home:products')
+    revalidatePath('/')
+}
+
+export async function deleteReviewReply(replyId: number) {
+    await checkAdmin()
+    const existing = await db.select({
+        productId: reviews.productId,
+    })
+        .from(reviewReplies)
+        .leftJoin(reviews, eq(reviewReplies.reviewId, reviews.id))
+        .where(eq(reviewReplies.id, replyId))
+        .limit(1)
+
+    await db.delete(reviewReplies).where(eq(reviewReplies.id, replyId))
+
+    const productId = existing[0]?.productId
+    if (productId) {
+        revalidatePath(`/buy/${productId}`)
+    }
+
+    revalidatePath('/admin/reviews')
     revalidatePath('/')
 }
 
@@ -674,6 +728,21 @@ export async function saveShopFooter(footer: string) {
     }
 
     await setSetting('shop_footer', text)
+    revalidatePath('/admin/settings')
+    revalidatePath('/')
+    updateTag('home:products')
+    updateTag('home:product-categories')
+}
+
+export async function saveCurrencyUnit(rawCurrencyUnit: string) {
+    await checkAdmin()
+
+    const currencyUnit = normalizeCurrencyUnit(rawCurrencyUnit) || ''
+    if (currencyUnit.length > 20) {
+        throw new Error("Currency unit is too long")
+    }
+
+    await setSetting('currency_unit', currencyUnit)
     revalidatePath('/admin/settings')
     revalidatePath('/')
     updateTag('home:products')
