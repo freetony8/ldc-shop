@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { auth } from "@/lib/auth"
 
 const DEFAULT_PAY_URL = "https://credit.linux.do/epay/pay/submit.php"
 
@@ -17,6 +18,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return NextResponse.redirect(new URL("/login?callbackUrl=%2Forders", request.url), 303)
+  }
+
   const formData = await request.formData()
   const payUrl = process.env.PAY_URL || DEFAULT_PAY_URL
 

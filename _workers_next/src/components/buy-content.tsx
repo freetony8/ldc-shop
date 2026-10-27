@@ -23,6 +23,7 @@ import { ChevronLeft, ChevronRight, Expand, Loader2, Minus, Plus, Share2 } from 
 import { ProductImagePlaceholder } from "@/components/product-image-placeholder"
 import { toast } from "sonner"
 import Image from "next/image"
+import Link from "next/link"
 import { INFINITE_STOCK } from "@/lib/constants"
 import { getBuyPageMeta } from "@/actions/buy"
 import type { ProductVariantRow } from "@/lib/db/queries"
@@ -34,6 +35,7 @@ interface Product {
     description: string | null
     price: string
     compareAtPrice?: string | null
+    maxPointsDiscount?: string | null
     image: string | null
     productImages?: string | null
     category: string | null
@@ -118,6 +120,7 @@ export function BuyContent({
                     description: v.description,
                     price: v.price,
                     compareAtPrice: v.compareAtPrice,
+                    maxPointsDiscount: v.maxPointsDiscount,
                     image: v.image,
                     productImages: v.productImages,
                     category: product.category,
@@ -721,6 +724,7 @@ export function BuyContent({
                                                         price={displayProduct.price}
                                                         productName={displayProduct.name}
                                                         quantity={quantity}
+                                                        maxPointsDiscount={displayProduct.maxPointsDiscount}
                                                         autoOpen={warningConfirmed && !!displayProduct.purchaseWarning}
                                                         emailConfigured={emailConfiguredState}
                                                         answers={hasQuestions ? questionAnswers : undefined}
@@ -758,6 +762,11 @@ export function BuyContent({
                                                 </svg>
                                                 <p className="text-sm font-medium">{t('buy.loginToBuy')}</p>
                                             </div>
+                                            <Button asChild className="mt-3 w-full">
+                                                <Link href={`/login?callbackUrl=${encodeURIComponent(`/buy/${displayProduct.id}`)}`}>
+                                                    {t('common.login')}
+                                                </Link>
+                                            </Button>
                                         </div>
                                     )}
                                 </div>

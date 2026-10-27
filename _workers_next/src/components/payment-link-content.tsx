@@ -28,6 +28,9 @@ export function PaymentLinkContent({ payee }: { payee?: string | null }) {
             const result = await createPaymentOrder(numeric, payee)
             if (!result?.success || !result.params) {
                 toast.error(result?.error ? t(result.error) : t('common.error'))
+                if (result?.error === 'common.loginRequired') {
+                    window.location.href = `/login?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`
+                }
                 return
             }
 

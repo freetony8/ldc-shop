@@ -21,6 +21,8 @@ export async function createPaymentOrder(amountInput: number | string, payeeInpu
     const session = await auth()
     const user = session?.user
 
+    if (!user?.id) return { success: false, error: 'common.loginRequired' }
+
     const normalized = normalizeAmount(amountInput)
     if (!normalized) {
         return { success: false, error: 'payment.invalidAmount' }
@@ -45,7 +47,7 @@ export async function createPaymentOrder(amountInput: number | string, payeeInpu
             productName: PAYMENT_PRODUCT_NAME,
             amount,
             email: user?.email || null,
-            userId: user?.id || null,
+            userId: user.id,
             username: user?.username || null,
             payee,
             status: 'pending',

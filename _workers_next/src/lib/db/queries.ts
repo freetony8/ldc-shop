@@ -9,7 +9,7 @@ import { cache } from "react";
 let dbInitialized = false;
 let loginUsersSchemaReady = false;
 let wishlistTablesReady = false;
-const CURRENT_SCHEMA_VERSION = 20;
+const CURRENT_SCHEMA_VERSION = 21;
 type ColumnEnsureKey = 'products' | 'orders' | 'cards' | 'loginUsers';
 const columnEnsureState: Record<ColumnEnsureKey, { ready: boolean; pending: Promise<void> | null }> = {
     products: { ready: false, pending: null },
@@ -165,6 +165,12 @@ async function ensureDatabaseInitialized() {
                 dbInitialized = true;
                 return;
             }
+            if (CURRENT_SCHEMA_VERSION === 21 && parsedVersion === 20) {
+                await ensureProductsColumns();
+                await setSetting('schema_version', String(CURRENT_SCHEMA_VERSION));
+                dbInitialized = true;
+                return;
+            }
         } catch (e) {
             // Settings table likely doesn't exist, proceed to full checks
         }
@@ -212,6 +218,7 @@ async function ensureDatabaseInitialized() {
             description TEXT,
             price TEXT NOT NULL,
             compare_at_price TEXT,
+            max_points_discount TEXT,
             category TEXT,
             image TEXT,
             product_images TEXT,
@@ -431,6 +438,7 @@ async function ensureDatabaseInitialized() {
 async function ensureProductsColumns() {
     await ensureColumnsOnce('products', async () => {
         await safeAddColumn('products', 'compare_at_price', 'TEXT');
+        await safeAddColumn('products', 'max_points_discount', 'TEXT');
         await safeAddColumn('products', 'is_hot', 'INTEGER DEFAULT 0');
         await safeAddColumn('products', 'purchase_warning', 'TEXT');
         await safeAddColumn('products', 'is_shared', 'INTEGER DEFAULT 0');
@@ -854,6 +862,7 @@ export async function getProducts() {
             description: products.description,
             price: products.price,
             compareAtPrice: products.compareAtPrice,
+            maxPointsDiscount: products.maxPointsDiscount,
             image: products.image,
             productImages: products.productImages,
             category: products.category,
@@ -897,6 +906,7 @@ export async function getActiveProducts(options?: { isLoggedIn?: boolean; trustL
             description: products.description,
             price: products.price,
             compareAtPrice: products.compareAtPrice,
+            maxPointsDiscount: products.maxPointsDiscount,
             image: products.image,
             productImages: products.productImages,
             category: products.category,
@@ -1063,6 +1073,7 @@ export async function getProduct(id: string, options?: { isLoggedIn?: boolean; t
             description: products.description,
             price: products.price,
             compareAtPrice: products.compareAtPrice,
+            maxPointsDiscount: products.maxPointsDiscount,
             image: products.image,
             productImages: products.productImages,
             category: products.category,
@@ -1114,6 +1125,7 @@ export type ProductVariantRow = {
     description: string | null;
     price: string;
     compareAtPrice: string | null;
+    maxPointsDiscount: string | null;
     image: string | null;
     productImages: string | null;
     variantLabel: string | null;
@@ -1138,6 +1150,7 @@ export async function getProductVariants(
             description: products.description,
             price: products.price,
             compareAtPrice: products.compareAtPrice,
+            maxPointsDiscount: products.maxPointsDiscount,
             image: products.image,
             productImages: products.productImages,
             variantLabel: products.variantLabel,
@@ -1182,6 +1195,7 @@ export async function getProductForAdmin(id: string) {
             description: products.description,
             price: products.price,
             compareAtPrice: products.compareAtPrice,
+            maxPointsDiscount: products.maxPointsDiscount,
             image: products.image,
             productImages: products.productImages,
             category: products.category,
@@ -1503,6 +1517,7 @@ export async function searchActiveProducts(params: {
             description: products.description,
             price: products.price,
             compareAtPrice: products.compareAtPrice,
+            maxPointsDiscount: products.maxPointsDiscount,
             image: products.image,
             category: products.category,
             isHot: products.isHot,

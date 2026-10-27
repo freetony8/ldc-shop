@@ -25,7 +25,7 @@ function mergeLiveStockIntoVariants(
 export default async function BuyPage({ params }: BuyPageProps) {
     const { id } = await params
     const session = await auth()
-    const isLoggedIn = !!session?.user
+    const isLoggedIn = !!session?.user?.id
     const trustLevel = Number.isFinite(Number(session?.user?.trustLevel)) ? Number(session?.user?.trustLevel) : 0
 
     // Keep first render lean: load only critical product data.
@@ -70,7 +70,7 @@ export default async function BuyPage({ params }: BuyPageProps) {
             product={product}
             stockCount={liveAvailable}
             lockedStockCount={liveLocked}
-            isLoggedIn={!!session?.user}
+            isLoggedIn={isLoggedIn}
             reviews={[]}
             averageRating={Number(product.rating || 0)}
             reviewCount={Number(product.reviewCount || 0)}

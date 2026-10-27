@@ -1,6 +1,8 @@
 import { PaymentLinkContent } from "@/components/payment-link-content"
 import { md5 } from "@/lib/crypto"
 import { unstable_noStore } from "next/cache"
+import { auth } from "@/lib/auth"
+import { redirect } from "next/navigation"
 
 function firstParam(value: string | string[] | undefined): string | undefined {
     if (!value) return undefined
@@ -14,6 +16,15 @@ export default async function PaymentLinkPage(props: {
     const searchParams = await props.searchParams
     const payeeParam = (firstParam(searchParams.to) || '').trim()
     const sigParam = (firstParam(searchParams.sig) || '').trim()
+    const session = await auth()
+    if (!session?.user?.id) {
+        const params = new URLSearchParams()
+        if (payeeParam) params.set('to', payeeParam)
+        if (sigParam) params.set('sig', sigParam)
+        const callbackUrl = params.size ? `/pay?${params}` : '/pay'
+        redirect(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`)
+    }
+
     const adminUsers = (process.env.ADMIN_USERS || '')
         .split(',')
         .map((name) => name.trim())
